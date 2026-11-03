@@ -5,6 +5,7 @@
   "description": "An accessible maths notebook for blind students: NVDA and MathCAT, graphs explored by sound",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
+    "postinstall": "node node_modules/electron/install.js",
     "start": "electron notebook/desktop/main.cjs",
     "sound-lab": "node sound-lab/server.mjs --open"
   },
