@@ -1,0 +1,10 @@
+.made-by-export_github
+.venv/
+__pycache__/
+node_modules/
+dist/
+*.log
+*.pid
+recognition-lab/models/
+recognition-lab/bin/
+recognition-lab/outputs/

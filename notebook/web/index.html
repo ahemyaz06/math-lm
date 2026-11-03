@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math Notebook</title>
+<link rel="stylesheet" href="/vendor/Temml-Latin-Modern.css">
+<link rel="stylesheet" href="/style.css">
+<script type="module" src="/app.js"></script>
+</head>
+<body>
+<main>
+  <h1>Math Notebook</h1>
+
+  <section class="open" aria-labelledby="open-title">
+    <h2 id="open-title">Open a PDF</h2>
+    <div class="row">
+      <label for="course">Course PDFs</label>
+      <select id="course"></select>
+      <button id="open-course" type="button">Open</button>
+    </div>
+    <div class="row">
+      <label for="recent">Opened before</label>
+      <select id="recent"></select>
+      <button id="open-recent" type="button">Open</button>
+    </div>
+    <div class="row">
+      <label for="file">Or choose a PDF file</label>
+      <input id="file" type="file" accept="application/pdf,.pdf">
+    </div>
+  </section>
+
+  <p id="announce" class="announce" role="status" aria-live="polite"></p>
+  <p id="error" class="error" role="alert"></p>
+
+  <article id="document" hidden aria-labelledby="doc-title">
+    <h2 id="doc-title" tabindex="-1"></h2>
+    <p id="progress" class="progress"></p>
+    <div id="pages"></div>
+  </article>
+
+  <footer>Everything is read on this computer. Equations are checked against the PDF’s own text; picture descriptions come from AI and may be wrong.</footer>
+</main>
+</body>
+</html>

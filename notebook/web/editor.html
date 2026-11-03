@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math Notebook</title>
+<link rel="stylesheet" href="/vendor/Temml-Latin-Modern.css">
+<link rel="stylesheet" href="/style.css">
+<link rel="stylesheet" href="/editor.css">
+<script type="module" src="/editor.js"></script>
+</head>
+<body class="editor">
+<div id="toolbar" class="toolbar" role="toolbar" aria-label="Toolbar. Left and right arrows move between buttons; F6 goes back to the document.">
+  <div class="group" role="group" aria-label="File">
+    <button type="button" data-command="open" title="Open a notebook (Ctrl+O)">Open</button>
+    <button type="button" data-command="save" title="Save (Ctrl+S)">Save</button>
+    <button type="button" data-command="importPdf" title="Import a PDF (Ctrl+Shift+I)">Import PDF</button>
+    <button type="button" data-command="importTex" title="Import a LaTeX .tex file">Import .tex</button>
+    <button type="button" data-command="exportDocx" title="Export as a Word document (Ctrl+Shift+W)">Export to Word</button>
+  </div>
+  <div class="group" role="group" aria-label="Format">
+    <label for="tb-style" class="visually-hidden">Paragraph style</label>
+    <select id="tb-style" title="Paragraph style (Ctrl+Alt+1, 2, 3; Ctrl+Alt+0 for normal text)">
+      <option value="normalText">Normal text</option>
+      <option value="heading1">Heading 1</option>
+      <option value="heading2">Heading 2</option>
+      <option value="heading3">Heading 3</option>
+    </select>
+    <button type="button" data-command="bold" aria-pressed="false" title="Bold (Ctrl+B)"><b>Bold</b></button>
+    <button type="button" data-command="italic" aria-pressed="false" title="Italic (Ctrl+I)"><i>Italic</i></button>
+    <button type="button" data-command="underline" aria-pressed="false" title="Underline (Ctrl+U)"><u>Underline</u></button>
+    <button type="button" data-command="bulletList" title="Bulleted list (Ctrl+Shift+L)">Bullets</button>
+    <button type="button" data-command="numberedList" title="Numbered list (Ctrl+Shift+7)">Numbering</button>
+    <button type="button" data-command="insertTable" title="Insert a table">Table</button>
+  </div>
+  <div class="group" role="group" aria-label="Maths and graphs">
+    <button type="button" data-command="insertEquation" title="Insert an equation (Alt+=)">Equation</button>
+    <button type="button" data-command="convertMath" title="Convert between plain text, LaTeX and MathML (Ctrl+Shift+M)">Convert math</button>
+    <button type="button" data-command="insertGraph" title="New graph from equations (Ctrl+Shift+G); Ctrl+G on an equation graphs it">Graph</button>
+  </div>
+  <div class="group" role="group" aria-label="Teacher and help">
+    <button type="button" id="tb-teacher" data-command="teacherMode" aria-pressed="false" title="Teacher mode: mark what students will not get">Teacher mode</button>
+    <button type="button" data-command="keys" title="Keyboard shortcuts (F1)">Help</button>
+  </div>
+</div>
+<main id="page">
+  <div id="doc" class="doc" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Document" spellcheck="true"></div>
+</main>
+
+<section id="graph-mode" class="graph-mode" tabindex="0" role="application" aria-label="Graph mode. Press question mark for keys, Escape to return." hidden>
+  <div class="graph-head" aria-hidden="true">
+    <h2>Graph mode</h2>
+    <p id="graph-reading"></p>
+  </div>
+  <svg aria-hidden="true"></svg>
+  <ul class="graph-keys" aria-hidden="true">
+    <li><kbd>J</kbd> <kbd>K</kbd> step along the function</li>
+    <li><kbd>Space</kbd> play or stop</li>
+    <li><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd> move freely</li>
+    <li><kbd>.</kbd> <kbd>,</kbd> next and previous point of interest</li>
+    <li><kbd>Tab</kbd> next function</li>
+    <li><kbd>I</kbd> describe · <kbd>V</kbd> read point · <kbd>F</kbd> step size</li>
+    <li><kbd>Esc</kbd> back to the document</li>
+  </ul>
+</section>
+
+<dialog id="keys-dialog" aria-labelledby="keys-title" class="wide">
+  <h2 id="keys-title">Keyboard shortcuts</h2>
+  <div id="keys-body" role="document" tabindex="0" aria-label="Keyboard shortcuts, by menu. Read with the arrow keys."></div>
+  <form method="dialog"><div class="buttons"><button value="close">Close</button></div></form>
+</dialog>
+
+<dialog id="equation-dialog" aria-labelledby="equation-title">
+  <h2 id="equation-title">Equation</h2>
+  <form method="dialog" id="equation-form">
+    <label for="equation-text" id="equation-label">Equation as plain text, for example (x^2 - 4)/(x - 2)</label>
+    <input id="equation-text" autocomplete="off" spellcheck="false">
+    <p id="equation-error" class="error" role="alert"></p>
+    <div id="equation-preview" class="math-display" aria-hidden="true"></div>
+    <p class="hint">Enter saves. Ctrl+L switches between plain text and LaTeX. Escape cancels.</p>
+  </form>
+</dialog>
+
+<dialog id="graph-dialog" aria-labelledby="graph-title">
+  <h2 id="graph-title">Graph from equations</h2>
+  <form method="dialog" id="graph-form">
+    <label for="graph-text">Functions of x, one per line, in plain text or LaTeX, for example x^2 - 4 or \frac{1}{x}; a piecewise function as \begin{cases} ... \end{cases}</label>
+    <textarea id="graph-text" rows="4" spellcheck="false"></textarea>
+    <label for="graph-range">x from and to, for example -5, 5; leave empty to choose a range that shows every hole and jump</label>
+    <input id="graph-range" autocomplete="off">
+    <label for="graph-yrange">y from and to; leave empty to fit the graph</label>
+    <input id="graph-yrange" autocomplete="off">
+    <p id="graph-error" class="error" role="alert"></p>
+    <p class="hint">Ctrl+Enter inserts the graph. Escape cancels. On an equation in the document, Ctrl+G graphs it directly.</p>
+  </form>
+</dialog>
+
+<dialog id="find-dialog" aria-labelledby="find-title">
+  <h2 id="find-title">Find</h2>
+  <form method="dialog" id="find-form">
+    <label for="find-text">Find what</label>
+    <input id="find-text" autocomplete="off" spellcheck="false">
+    <div id="replace-part">
+      <label for="replace-text">Replace with</label>
+      <input id="replace-text" autocomplete="off" spellcheck="false">
+    </div>
+    <label class="check"><input type="checkbox" id="find-case"> Match case</label>
+    <label class="check"><input type="checkbox" id="find-words"> Whole words only</label>
+    <p id="find-message" class="error" role="alert"></p>
+    <div class="buttons">
+      <button value="find" id="find-next">Find next</button>
+      <button type="button" id="find-previous">Find previous</button>
+      <button type="button" id="replace-one" class="replace-only">Replace</button>
+      <button type="button" id="replace-all" class="replace-only">Replace all</button>
+      <button value="close" formnovalidate>Close</button>
+    </div>
+    <p class="hint">Enter finds the next match and goes to it in the document. F3 and Shift+F3 find again from the document.</p>
+  </form>
+</dialog>
+
+<dialog id="headings-dialog" aria-labelledby="headings-title">
+  <h2 id="headings-title">Headings</h2>
+  <form method="dialog" id="headings-form">
+    <label for="heading-list">Headings in the document; up and down arrows choose, Enter goes there</label>
+    <select id="heading-list" size="12"></select>
+    <div class="buttons">
+      <button value="go" id="headings-go">Go to heading</button>
+      <button value="close" formnovalidate>Close</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="student-graph-dialog" aria-labelledby="student-graph-title">
+  <h2 id="student-graph-title">Graph for students</h2>
+  <form method="dialog" id="student-graph-form">
+    <p id="student-graph-about"></p>
+    <label class="check"><input type="checkbox" id="sg-formula"> Hide the formula: students get the curve's points and find the function</label>
+    <fieldset>
+      <legend>Also hide these, for students to find</legend>
+      <label class="check"><input type="checkbox" id="sg-zeros"> Where it crosses the x-axis (zeros)</label>
+      <label class="check"><input type="checkbox" id="sg-yIntercept"> Where it crosses the y-axis</label>
+      <label class="check"><input type="checkbox" id="sg-extrema"> Peaks and valleys</label>
+      <label class="check"><input type="checkbox" id="sg-holes"> Holes, jumps and dots</label>
+      <label class="check"><input type="checkbox" id="sg-asymptotes"> Vertical asymptotes</label>
+      <label class="check"><input type="checkbox" id="sg-corners"> Sharp corners, cusps and where the curve ends</label>
+    </fieldset>
+    <div class="buttons">
+      <button value="save" id="sg-save">Save</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </div>
+    <p class="hint">Teacher > Preview student copy lets you hear the graph as students will.</p>
+  </form>
+</dialog>
+
+<dialog id="table-dialog" aria-labelledby="table-title">
+  <h2 id="table-title">Insert table</h2>
+  <form method="dialog" id="table-form">
+    <label for="table-columns">Number of columns</label>
+    <input id="table-columns" type="number" min="1" max="20" value="2">
+    <label for="table-rows">Number of rows</label>
+    <input id="table-rows" type="number" min="1" max="200" value="3">
+    <label class="check"><input type="checkbox" id="table-header" checked> First row is a header row</label>
+    <p id="table-error" class="error" role="alert"></p>
+    <div class="buttons">
+      <button value="insert" id="table-insert">Insert</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </div>
+    <p class="hint">In a table, Tab and Shift+Tab move between cells; Tab in the last cell adds a row.</p>
+  </form>
+</dialog>
+
+<dialog id="convert-dialog" aria-labelledby="convert-title">
+  <h2 id="convert-title">Convert math</h2>
+  <form method="dialog" id="convert-form">
+    <label for="convert-input">Math to convert: plain text such as (x^2 - 4)/(x - 2), LaTeX, or MathML</label>
+    <textarea id="convert-input" rows="4" spellcheck="false"></textarea>
+    <label for="convert-from">It is written in</label>
+    <select id="convert-from">
+      <option value="auto">Find out automatically</option>
+      <option value="plain">Plain text</option>
+      <option value="latex">LaTeX</option>
+      <option value="mathml">MathML</option>
+    </select>
+    <label for="convert-to">Convert to</label>
+    <select id="convert-to">
+      <option value="latex">LaTeX</option>
+      <option value="plain">Plain text</option>
+      <option value="mathml">MathML</option>
+    </select>
+    <label for="convert-output">Result</label>
+    <textarea id="convert-output" rows="4" readonly spellcheck="false"></textarea>
+    <p id="convert-error" class="error" role="alert"></p>
+    <div id="convert-preview-wrap">
+      <p id="convert-preview-label">How it looks (read it with MathCAT):</p>
+      <div id="convert-preview" class="math-display" role="group" aria-labelledby="convert-preview-label"></div>
+    </div>
+    <div class="buttons">
+      <button value="copy" id="convert-copy">Copy result</button>
+      <button type="button" id="convert-insert">Insert as equation</button>
+      <button value="close" formnovalidate>Close</button>
+    </div>
+    <p class="hint">The result updates as you type. Ctrl+Enter copies it.</p>
+  </form>
+</dialog>
+
+<dialog id="settings-dialog" aria-labelledby="settings-title">
+  <h2 id="settings-title">Settings</h2>
+  <form method="dialog" id="settings-form">
+    <fieldset id="settings-reading">
+      <legend>Reading PDFs</legend>
+      <p>PDFs made with LaTeX (most course notes and homework) are read from their own text, by rules: every equation exactly as printed.</p>
+      <div id="reading-ai-choice">
+        <label for="set-reading_method">How pages are read</label>
+        <select id="set-reading_method" name="reading_method">
+          <option value="auto">Automatic: text from the PDF; the AI add-on only for pictures and for pages whose maths is not stored as text</option>
+          <option value="text">Text from the PDF only; the AI never reads a page</option>
+          <option value="ai">The AI reads every page (slower; checked against the PDF)</option>
+        </select>
+      </div>
+      <label for="set-pages_at_once">Pages read at the same time</label>
+      <select id="set-pages_at_once" name="pages_at_once" data-number>
+        <option value="1">1</option>
+        <option value="2">2</option>
+      </select>
+    </fieldset>
+    <fieldset id="settings-ai">
+      <legend>AI add-on</legend>
+      <p id="settings-no-ai" hidden>The AI add-on is not installed. Everything else works without it. Only pictures, and
+        pages whose maths is stored as pictures or shapes (scans), cannot be read.</p>
+      <label id="use-ai-label" class="check"><input type="checkbox" id="set-use_ai" name="use_ai"> Use the AI add-on (for pictures, and for pages whose maths is not stored as text)</label>
+      <div id="settings-ai-choices">
+        <label class="check"><input type="checkbox" id="set-describe_pictures" name="describe_pictures"> Describe pictures with AI (descriptions may be wrong)</label>
+        <label class="check"><input type="checkbox" id="set-estimate_graph_numbers" name="estimate_graph_numbers"> Estimate numbers from graph pictures</label>
+        <label for="set-reading_model">Reading model</label>
+        <select id="set-reading_model" name="reading_model"></select>
+        <label for="set-second_model">Second model, re-reads AI pages that have review notes</label>
+        <select id="set-second_model" name="second_model"></select>
+      </div>
+    </fieldset>
+    <fieldset id="settings-sound">
+      <legend>Graph sound</legend>
+      <label for="set-sound_profile">Sound profile</label>
+      <select id="set-sound_profile" name="sound_profile">
+        <option value="gentle">Gentle: soft, no sharp attack</option>
+        <option value="warm-acoustic">Warm acoustic: marimba and glass bell</option>
+        <option value="soft-synth">Soft synth</option>
+        <option value="crisp-piano">Crisp piano: clear attack</option>
+        <option value="high-contrast">High contrast: bass against tin</option>
+        <option value="progress">Progress beep: pitch climbs from the bottom of the graph to the top, softer below zero</option>
+      </select>
+      <label for="set-bass_mode">Bass line while playing</label>
+      <select id="set-bass_mode" name="bass_mode">
+        <option value="x-and-y">Follows x and the curve's height</option>
+        <option value="x-only">Follows x only</option>
+        <option value="y-only">Follows the curve's height only</option>
+        <option value="off">Off</option>
+      </select>
+      <label for="set-dot_sounds">Dots and corners</label>
+      <select id="set-dot_sounds" name="dot_sounds">
+        <option value="new">Bump for a solid dot, wind for an open dot, a slide through a corner</option>
+        <option value="original">Original: held tone and air breath, no corner sound</option>
+      </select>
+      <label for="set-step">Step when tracing and moving</label>
+      <select id="set-step" name="step" data-number>
+        <option value="0.1">0.1</option>
+        <option value="0.25">0.25</option>
+        <option value="0.5">0.5</option>
+        <option value="1">1</option>
+      </select>
+      <label for="set-play_speed_ms">Playing speed</label>
+      <select id="set-play_speed_ms" name="play_speed_ms" data-number>
+        <option value="800">Slow: 0.8 seconds a step</option>
+        <option value="400">Medium: 0.4 seconds a step</option>
+        <option value="250">Smooth: 0.25 seconds a step</option>
+        <option value="150">Fast: 0.15 seconds a step</option>
+      </select>
+      <label><input type="checkbox" id="set-cues" name="cues"> Sounds for peaks, zeros and other points of interest</label>
+      <label><input type="checkbox" id="set-free_move_tones" name="free_move_tones"> Tones when the arrow keys land on a curve, a dot or the origin</label>
+      <label for="set-volume">Step volume</label>
+      <select id="set-volume" name="volume" data-number>
+        <option value="0.1">Quiet</option>
+        <option value="0.25">Medium</option>
+        <option value="0.4">Loud</option>
+        <option value="0.5">Loudest</option>
+      </select>
+      <label for="set-bass_volume">Bass line volume</label>
+      <select id="set-bass_volume" name="bass_volume" data-number>
+        <option value="0.2">Quiet</option>
+        <option value="0.35">Medium</option>
+        <option value="0.6">Loud</option>
+        <option value="0.9">Loudest</option>
+      </select>
+    </fieldset>
+    <p id="settings-error" class="error" role="alert"></p>
+    <div class="buttons">
+      <button value="save" id="settings-save">Save</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+      <button type="button" id="settings-defaults">Restore defaults</button>
+    </div>
+  </form>
+</dialog>
+
+<p id="status" class="status" role="status" aria-live="polite"></p>
+<p id="mode-indicator" class="mode-indicator" aria-hidden="true"></p>
+</body>
+</html>

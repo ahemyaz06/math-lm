@@ -1,0 +1,19 @@
+Third-party components
+
+Included in this repository:
+- Temml (notebook/web/vendor/temml.mjs, Temml-Latin-Modern.css, Temml.woff2): MIT License,
+  Copyright (c) 2020 Ron Kok. See notebook/web/vendor/TEMML-LICENSE.txt.
+- Latin Modern Math font (notebook/web/vendor/latinmodernmath.woff2): GUST Font License.
+  https://www.gust.org.pl/projects/e-foundry/latin-modern
+
+Installed separately (not included here; each keeps its own licence):
+- Electron (npm install): MIT. https://github.com/electron/electron
+- pypdfium2 / PDFium: Apache-2.0 / BSD-3-Clause. https://github.com/pypdfium2-team/pypdfium2
+- pdfplumber: MIT. https://github.com/jsvine/pdfplumber
+- RapidOCR ONNX Runtime: Apache-2.0. https://github.com/RapidAI/RapidOCR
+- OpenCV: Apache-2.0. https://opencv.org/license/
+- NumPy: BSD-3-Clause. https://numpy.org/
+- Pillow: MIT-CMU. https://python-pillow.org/
+- ONNX Runtime: MIT. https://github.com/microsoft/onnxruntime
+- The optional AI add-on uses llama.cpp (MIT) and a vision model downloaded by the user under
+  that model's own licence.

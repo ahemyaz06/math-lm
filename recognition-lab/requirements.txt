@@ -1,0 +1,9 @@
+rapidocr-onnxruntime==1.4.4
+opencv-python==5.0.0.93
+numpy==2.5.4
+pillow==13.0.0
+onnxruntime==1.31.0
+
+# PDF inspection and rendering
+pypdfium2==5.14.0
+pdfplumber==0.11.9

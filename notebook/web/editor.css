@@ -1,0 +1,115 @@
+/* Hidden means hidden, whatever display a rule below gives the element. */
+[hidden] { display: none !important; }
+body.editor { background: var(--panel); }
+body.editor main { max-width: none; padding: 0; }
+.doc {
+  max-width: 50rem; min-height: calc(100vh - 4rem); margin: 1.5rem auto 3rem; padding: 2.5rem 3rem;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 4px; outline: none;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .08);
+}
+.doc:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.doc h2 { font-size: 1.4rem; border-top: 2px solid var(--line); padding-top: 1rem; margin-top: 2.5rem; }
+.doc h2:first-child { border-top: 0; margin-top: 0; padding-top: 0; }
+.doc h3 { font-size: 1.15rem; border: 0; padding: 0; margin: 1.5rem 0 .3rem; }
+.doc p { margin: .5rem 0; }
+.doc p:empty::before, .doc p.answer:has(br:only-child)::before { content: attr(data-placeholder); color: var(--muted); font-style: italic; }
+.eq { display: inline-block; padding: 0 2px; border-radius: 3px; cursor: pointer; }
+.eq:hover, .eq.selected { background: var(--check-bg); }
+.eq-line { text-align: center; margin: .75rem 0; }
+.graph-line, .figure-line {
+  border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--panel);
+  padding: .5rem .75rem; border-radius: 4px;
+}
+.figure-line { border-left-color: var(--muted); }
+.warned { text-decoration: underline wavy var(--check-line); text-decoration-thickness: 2px; text-underline-offset: 4px; }
+.doc table { margin: .75rem 0; }
+.status {
+  position: fixed; left: 0; right: 0; bottom: 0; margin: 0; padding: .35rem 1rem;
+  background: var(--bg); border-top: 1px solid var(--line); color: var(--muted); font-size: .95rem;
+}
+.graph-mode { position: fixed; inset: 0 0 2.2rem 0; background: var(--bg); display: grid; place-items: center; outline: none; }
+.graph-mode[hidden] { display: none; }
+.graph-mode svg { width: min(90vw, 900px); height: auto; aspect-ratio: 3 / 2; border: 1px solid var(--line); background: var(--panel); }
+.graph-mode:focus-visible { box-shadow: inset 0 0 0 3px var(--accent); }
+dialog { border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.5rem; background: var(--bg); color: var(--text); width: min(90vw, 40rem); }
+dialog::backdrop { background: rgba(0, 0, 0, .35); }
+dialog label { display: block; margin: .5rem 0 .25rem; }
+dialog input, dialog textarea { width: 100%; padding: .4rem; font-family: Consolas, "Cascadia Mono", monospace; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+.hint { color: var(--muted); font-size: .9rem; }
+#settings-dialog { max-height: 90vh; overflow-y: auto; }
+#settings-dialog fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 0 0 1rem; padding: .5rem 1rem 1rem; }
+#settings-dialog legend { font-weight: 600; padding: 0 .3rem; }
+#settings-dialog select { width: 100%; padding: .35rem; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+#settings-dialog input[type="checkbox"] { width: auto; margin-right: .5rem; }
+#settings-dialog .buttons { display: flex; gap: .5rem; flex-wrap: wrap; }
+.figure-line.waiting { font-style: italic; }
+dialog label.check { display: flex; align-items: center; gap: .5rem; }
+dialog label.check input { width: auto; }
+dialog select { width: 100%; padding: .35rem; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 4px; }
+dialog .buttons { display: flex; gap: .5rem; flex-wrap: wrap; margin-top: .75rem; }
+#find-dialog:not(.replacing) #replace-part, #find-dialog:not(.replacing) .replace-only { display: none; }
+#convert-preview { min-height: 2rem; padding: .5rem; border: 1px dashed var(--line); border-radius: 4px; text-align: center; }
+.doc td, .doc th { border: 1px solid var(--line); padding: .25rem .5rem; min-width: 3rem; vertical-align: top; }
+.doc table { border-collapse: collapse; }
+.doc ul, .doc ol { margin: .5rem 0; padding-left: 2rem; }
+.doc hr.page-break { border: 0; border-top: 2px dashed var(--muted); margin: 1.5rem 0; }
+
+/* Printing and PDF export: just the document, as on paper. */
+@media print {
+  @page { margin: 2cm; }
+  body.editor, .doc { background: #fff; color: #000; }
+  .doc, .doc:focus-visible { max-width: none; min-height: 0; margin: 0; padding: 0; border: 0; box-shadow: none; outline: none; }
+  .status, dialog, .graph-mode { display: none !important; }
+  .doc p:empty::before, .doc p.answer:has(br:only-child)::before { content: none; }
+  .warned { text-decoration: none; }
+  .doc hr.page-break { break-after: page; border: 0; margin: 0; height: 0; }
+  .doc h1, .doc h2, .doc h3, .doc h4 { break-after: avoid; }
+  .eq-line, .doc tr, .graph-line, .figure-line { break-inside: avoid; }
+  .doc td, .doc th { border-color: #000; }
+}
+
+/* Teacher mode: what students will not get is marked in words (screen readers read them too). */
+.doc [data-teacher]:not(span) { border-left: 4px dashed var(--check-line); padding-left: .6rem; }
+.doc [data-teacher]:not(span)::before { content: "Hidden from students: "; font-weight: 600; color: var(--check-line); }
+.doc span[data-teacher] { background: var(--check-bg); outline: 1px dashed var(--check-line); }
+.doc span[data-teacher]::before { content: "(hidden from students) "; font-size: .85em; color: var(--check-line); }
+body.teacher .doc p.answer { border: 1px dashed var(--line); padding: .3rem .5rem; }
+body.teacher .doc p.answer::before { content: "Answer box (empty for students): "; font-size: .9em; color: var(--muted); }
+.doc .graph-line[data-student-note]::after { content: " For students: " attr(data-student-note); font-style: italic; }
+body.student-preview .doc { outline: 3px solid var(--accent); }
+@media print {
+  .doc [data-teacher]:not(span), .doc span[data-teacher] { border: 0; outline: 0; background: none; padding-left: 0; }
+  .doc [data-teacher]::before, body.teacher .doc p.answer::before, .doc .graph-line[data-student-note]::after { content: none; }
+}
+
+/* The toolbar: words, not icons, so every button says what it does. */
+.toolbar {
+  position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: .25rem 1rem; align-items: center;
+  padding: .35rem .75rem; background: var(--bg); border-bottom: 1px solid var(--line); box-shadow: 0 1px 3px rgba(0, 0, 0, .06);
+}
+.toolbar .group { display: flex; gap: .25rem; align-items: center; padding-right: 1rem; border-right: 1px solid var(--line); }
+.toolbar .group:last-child { border-right: 0; }
+.toolbar button, .toolbar select {
+  font: inherit; font-size: .9rem; padding: .3rem .6rem; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--text); cursor: pointer;
+}
+.toolbar button:hover, .toolbar select:hover { border-color: var(--accent); }
+.toolbar button:focus-visible, .toolbar select:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
+.toolbar button[aria-pressed="true"] { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.status { display: flex; justify-content: space-between; gap: 1rem; }
+.mode-indicator { position: fixed; right: 1rem; bottom: .35rem; margin: 0; font-weight: 600; color: var(--check-line); font-size: .95rem; z-index: 6; }
+
+/* Graph mode on screen: what is happening, and its keys. */
+.graph-mode { grid-template-rows: auto 1fr auto; gap: .5rem; padding: 1rem; z-index: 10; }
+.graph-head { text-align: center; }
+.graph-head h2 { margin: 0; font-size: 1.2rem; }
+.graph-head p { margin: .25rem 0 0; min-height: 1.4em; font-size: 1.05rem; }
+.graph-keys { display: flex; flex-wrap: wrap; gap: .4rem 1.5rem; justify-content: center; list-style: none; padding: 0; margin: 0; color: var(--muted); font-size: .9rem; }
+kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 3px; padding: 0 .3rem; font-family: inherit; background: var(--panel); }
+.graph-mode svg text { font-size: 11px; fill: var(--muted); }
+
+dialog.wide { width: min(92vw, 52rem); max-height: 88vh; overflow-y: auto; }
+#keys-body h3 { margin: 1rem 0 .3rem; font-size: 1.05rem; }
+#keys-body table { width: 100%; border-collapse: collapse; }
+#keys-body td, #keys-body th { border-bottom: 1px solid var(--line); padding: .2rem .5rem; text-align: left; }
+@media print { .toolbar { display: none !important; } }
