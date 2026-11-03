@@ -19,7 +19,7 @@ The notebook needs the other two folders, so keep them together.
 
 ## The quickest start: the portable app (Windows, no setup)
 
-Download `Math Notebook (portable).zip` from this repository's **Releases** page, unzip it
+Download `Math-Notebook-portable.zip` from this repository's **Releases** page, unzip it
 anywhere, and run `Math Notebook.exe`. It carries everything it needs. It has no AI add-on,
 which only matters for describing pictures. `Read me first.txt` inside explains the rest.
 
