@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Calculus Stereo Sound Lab</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="container">
+    <form id="equation-form" class="top-bar" aria-label="Equation entry">
+      <label for="equation-input">Equation:</label>
+      <input id="equation-input" type="text" value="y = x^3 - 3*x" autocomplete="off" spellcheck="false" required>
+      <button type="submit" class="primary-btn">Load</button>
+      <button type="button" id="open-settings-btn">Settings (S)</button>
+    </form>
+
+    <div
+      id="sound-pad"
+      class="sound-pad"
+      tabindex="0"
+      role="application"
+      aria-label="Stereo Sound Pad. Press question mark for keys."
+    >
+      <div class="pad-header" aria-hidden="true">
+        <div id="visual-readout" class="visual-readout">y = x^3 - 3*x | X = 0, Y = 0</div>
+        <div id="last-event-banner" class="event-banner">Press J / K (or Left / Right), A to play, B for Bass Outline mode, C for Cues, S for Settings.</div>
+      </div>
+      <svg id="graph-svg" viewBox="0 0 600 340" aria-hidden="true"></svg>
+    </div>
+
+    <!-- Spoken only when requested (pressing V, B, C, S, F, R, or loading an equation) -->
+    <div id="on-demand-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+  </main>
+
+  <dialog id="settings-dialog" aria-labelledby="settings-title">
+    <div class="dialog-content">
+      <h2 id="settings-title">Sound &amp; Movement Settings</h2>
+
+      <div class="settings-grid">
+        <div class="control-group">
+          <label for="profile-select">Step Sound Profile (Instrument Style):</label>
+          <select id="profile-select">
+            <option value="gentle" selected>Gentle (soft, no sharp attack)</option>
+            <option value="warm-acoustic">Warm Acoustic (Marimba &amp; Glass Bell)</option>
+            <option value="soft-synth">Soft Synth Wave (Pure &amp; Gentle)</option>
+            <option value="crisp-piano">Crisp Piano / Pluck (Clear Step Attack)</option>
+            <option value="high-contrast">High-Contrast Bass vs. Tin (Sharp Split)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="bass-mode-select">Background Dark Bass Outline (Shortcut: B):</label>
+          <select id="bass-mode-select">
+            <option value="x-and-y" selected>Combined: Tracks Forward/Backward X + Curve Y</option>
+            <option value="x-only">Horizontal X Only: Rises moving forward, lowers backward</option>
+            <option value="y-only">Curve Y Only: Dark bass mirror of curve height</option>
+            <option value="off">Off (Step pulses only, no background hold)</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="step-select">Step Distance (X units per step — Shortcut: F):</label>
+          <select id="step-select">
+            <option value="0.5" selected>0.5 units</option>
+            <option value="1">1.0 unit</option>
+            <option value="0.25">0.25 units</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="rate-select">Step Delay / Speed (Shortcut: R):</label>
+          <select id="rate-select">
+            <option value="800">0.8 seconds (Slow)</option>
+            <option value="400" selected>0.4 seconds (Medium - Flowing)</option>
+            <option value="250">0.25 seconds (Smooth Wave)</option>
+            <option value="150">0.15 seconds (Fast Sweep)</option>
+          </select>
+        </div>
+
+        <div class="control-group checkbox-group">
+          <label for="cues-checkbox">
+            <input id="cues-checkbox" type="checkbox" checked>
+            Enable Landmark Sound Cues (Origin, Peaks, Solid &amp; Open Points) — Shortcut: <strong>C</strong>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <label for="boundary-select">Axis Window (-X to +X):</label>
+          <select id="boundary-select">
+            <option value="5" selected>-5 to +5</option>
+            <option value="10">-10 to +10</option>
+            <option value="20">-20 to +20</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="volume-input">Master Step Volume:</label>
+          <input id="volume-input" type="range" min="0.05" max="0.5" step="0.05" value="0.25">
+        </div>
+
+        <div class="control-group">
+          <label for="bass-outline-volume">Background Bass Outline Level:</label>
+          <input id="bass-outline-volume" type="range" min="0.1" max="0.9" step="0.05" value="0.35">
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <h3>Quick Test Presets</h3>
+      <div class="presets-bar">
+        <button type="button" class="preset-btn" data-preset="parabola">Parabola (y = x^2 - 4)</button>
+        <button type="button" class="preset-btn" data-preset="cubic">Cubic Peak &amp; Valley (y = x^3 - 3*x)</button>
+        <button type="button" class="preset-btn" data-preset="hole">Line with Open Hole (y = (x^2 - 4)/(x - 2))</button>
+        <button type="button" class="preset-btn" data-preset="points">Solid vs. Open Point (y = 2*x)</button>
+      </div>
+
+      <hr class="divider">
+
+      <h3>What Each Sound Means (Click to Preview)</h3>
+      <ul class="sound-guide">
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="outline">Preview Dark Bass Outline</button>
+          <strong>Continuous Dark Bass Outline:</strong> Stays on in the background and holds your current point when you stop. Rises as you move forward in X and lowers as you move backward so you always feel direction and connection.
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="bass">Preview Step Bass (Y &lt; 0)</button>
+          <strong>Warm Low Step Pulse:</strong> Plays every 0.5 or 1.0 units when the curve is <strong>below zero</strong> (negative Y).
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="tin">Preview Step Treble (Y &gt; 0)</button>
+          <strong>Clear Treble Step Pulse:</strong> Plays every 0.5 or 1.0 units when the curve is <strong>above zero</strong> (positive Y).
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="origin">Preview Origin / Zero</button>
+          <strong>Center Marimba / Wood Tick:</strong> Crossing Y = 0 or the Origin (0, 0).
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="peak-valley">Preview Peak &amp; Valley</button>
+          <strong>Harmonic Swell:</strong> High fifth bloom at a <strong>Peak (local max)</strong>; warm low fifth at a <strong>Valley (local min)</strong>.
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="solid">Preview Solid Point</button>
+          <strong>Firm Wood Tap:</strong> Closed / marked solid point on the curve (toggle with <strong>P</strong>).
+        </li>
+        <li>
+          <button type="button" class="sound-test-btn" data-sound="open">Preview Open Hole</button>
+          <strong>Soft Hollow Air Gap:</strong> Background bass dips out and a soft breathy gap plays because the point is missing (toggle with <strong>H</strong>).
+        </li>
+      </ul>
+
+      <div class="dialog-actions">
+        <button type="button" id="close-settings-btn" class="primary-btn">Close Settings &amp; Return to Sound Pad</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

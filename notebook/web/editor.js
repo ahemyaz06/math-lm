@@ -668,7 +668,7 @@ function openEquation(target) {
   latexMode = false;
   const input = $('equation-text');
   input.value = target ? latexToPlain(target.dataset.latex) : '';
-  $('equation-label').textContent = 'Equation as plain text, for example (x^2 - 4)/(x - 2)';
+  $('equation-label').textContent = 'Equation as plain text';
   $('equation-error').textContent = '';
   preview();
   $('equation-dialog').showModal();
@@ -697,7 +697,7 @@ function toggleLatex() {
     const latex = currentLatex();
     latexMode = !latexMode;
     $('equation-text').value = latexMode ? latex : latexToPlain(latex);
-    $('equation-label').textContent = latexMode ? 'Equation as LaTeX' : 'Equation as plain text, for example (x^2 - 4)/(x - 2)';
+    $('equation-label').textContent = latexMode ? 'Equation as LaTeX' : 'Equation as plain text';
     say(latexMode ? `LaTeX: ${latex}` : `Plain text: ${$('equation-text').value}`);
     preview();
   } catch (error) {
@@ -1711,6 +1711,35 @@ function showMode() {
 
 // ---------- keyboard shortcuts: one page, made from the menus ----------
 
+// ---------- help in dialogs ----------
+
+// Dialogs show only their fields; what to type and which keys work is behind a Help button
+// (and F1), in a small dialog NVDA reads when it opens. Returns false outside such a dialog.
+function showDialogHelp(dialog = [...document.querySelectorAll('dialog[open]')].filter((d) => d.id !== 'help-dialog' && d.id !== 'keys-dialog').at(-1)) {
+  const help = dialog?.querySelector('template.dialog-help');
+  if (!help || $('help-dialog').open) return Boolean(help);
+  const back = document.activeElement;
+  $('help-title').textContent = `Help: ${dialog.querySelector('h2')?.textContent || ''}`;
+  $('help-text').replaceChildren(help.content.cloneNode(true));
+  $('help-dialog').showModal();
+  $('help-close').focus();
+  $('help-dialog').addEventListener('close', () => back?.focus?.(), { once: true });
+  return true;
+}
+for (const dialog of document.querySelectorAll('dialog')) {
+  if (!dialog.querySelector('template.dialog-help')) continue;
+  let row = dialog.querySelector('form > .buttons');
+  if (!row) { row = document.createElement('div'); row.className = 'buttons'; dialog.querySelector('form').append(row); }
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'help-button';
+  button.textContent = 'Help';
+  button.addEventListener('click', () => showDialogHelp(dialog));
+  row.append(button);
+  // F1 from any field of the dialog (the desktop menu's F1 does the same; a second call does nothing).
+  dialog.addEventListener('keydown', (e) => { if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); showDialogHelp(dialog); } });
+}
+
 async function showKeys() {
   if ($('keys-dialog').open) return;
   const body = $('keys-body');
@@ -2162,7 +2191,7 @@ const COMMANDS = {
   nextNote: () => moveToWarning(1),
   previousNote: () => moveToWarning(-1),
   clearNote: clearWarning,
-  keys: () => showKeys(),
+  keys: () => { if (!showDialogHelp()) showKeys(); }, // F1 in a dialog is that dialog's help
   settings: () => openSettings('reading'),
   settingsReading: () => openSettings('reading'),
   settingsAi: () => openSettings('ai'),

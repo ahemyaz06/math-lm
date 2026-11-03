@@ -4,7 +4,27 @@
 import { latexToPlain, parsePlain, plainToLatex } from './equation.js';
 import { compileEquation, compileExpression, detectLandmarks, formatNumber } from '/sound/graph-math.js';
 
-const say = (n) => formatNumber(Math.abs(n) < 1e-9 ? 0 : n).replace('-', 'minus ');
+// How numbers are said while exploring a graph (Settings > Graph sound): 'half' rounds to the
+// nearest half (4.1931 is 4, 0.894 is 1, 0.00004 is 0), 'tenth' to one decimal, 'exact' keeps
+// six digits. What is written into the document (makeGraph, studentGraph) is always exact.
+let numberStyle = 'exact';
+export function setNumberStyle(style) {
+  if (['half', 'tenth', 'exact'].includes(style)) numberStyle = style;
+}
+export function roundForSpeech(n) {
+  if (!Number.isFinite(n)) return n;
+  // Halves round away from zero on both sides: 3.75 is 4 and -3.75 is -4 (Math.round alone
+  // would make -3.75 into -3.5).
+  const to = (k) => Math.sign(n) * Math.round(Math.abs(n) * k) / k;
+  const r = numberStyle === 'half' ? to(2) : numberStyle === 'tenth' ? to(10) : n;
+  return Math.abs(r) < 1e-9 ? 0 : r;
+}
+export const say = (n) => formatNumber(roundForSpeech(n)).replace('-', 'minus ');
+function exactly(work) {
+  const before = numberStyle;
+  numberStyle = 'exact';
+  try { return work(); } finally { numberStyle = before; }
+}
 
 // ---------- the parsed maths -> Sound Lab's expression syntax ----------
 
@@ -323,9 +343,73 @@ export function landmarksOf(graph, boundary) {
         continue;
       }
     }
+    // A flat root (x - 3)^3 is found a hair away (3.00002); the whole number is the root
+    // when the function is at least as close to zero there.
+    if (l.kind === 'x-axis') {
+      const r = Number(l.x.toFixed(3));
+      const at = (x) => Math.abs(valueAt(graph, x));
+      if (r !== l.x && Math.abs(r - l.x) < 1e-3 && at(r) <= at(l.x) + 1e-12) l.x = r;
+    }
     out.push(l);
   }
-  return [...out, ...shapeMarks(graph, boundary, out)].sort((a, b) => a.x - b.x);
+  const all = [...out, ...shapeMarks(graph, boundary, out), ...jumpMarks(graph, boundary, out)];
+  // A corner, an end or a turning point at height 0 (where pieces meet) is a zero too.
+  for (const l of [...all]) {
+    if (['corner', 'endpoint', 'minimum', 'maximum'].includes(l.kind) && l.y === 0 && !all.some((m) => ['x-axis', 'origin'].includes(m.kind) && Math.abs(m.x - l.x) < 1e-6)) {
+      all.push(Math.abs(l.x) < 1e-9 ? { kind: 'origin', x: 0, y: 0, label: 'Origin (0, 0)' } : { kind: 'x-axis', x: l.x, y: 0, label: `X-axis root at (${formatNumber(l.x)}, 0)` });
+    }
+  }
+  return all.sort((a, b) => a.x - b.x);
+}
+
+// At a jump, the point itself can be the lowest or highest around it: in a piecewise function
+// whose value at x = 0 is -1 with the curve above it on both sides, (0, -1) is a valley.
+function jumpMarks(graph, boundary, known) {
+  if (graph.hasSteps) return [];
+  const out = [];
+  const N = 800, h = (2 * boundary) / N;
+  for (let i = 0; i < N; i += 1) {
+    let a = -boundary + i * h, b = a + h;
+    if (graph.isContinuousBetween(a, b) || !Number.isFinite(valueAt(graph, a)) || !Number.isFinite(valueAt(graph, b))) continue;
+    for (let n = 0; n < 60; n += 1) { const mid = (a + b) / 2; if (graph.isContinuousBetween(a, mid)) a = mid; else b = mid; }
+    // The break is at a or b; take the nicer number and look at the point and both sides.
+    for (const x of new Set([a, b].map((v) => Number(v.toFixed(6)) || 0))) {
+      if (known.some((l) => l.kind === 'asymptote' && Math.abs(l.x - x) < 1e-5)) continue;
+      const v = valueAt(graph, x);
+      // Each side close in (1e-4) and closer (1e-6): both must settle, not run off (a pole).
+      const [l4, l6, r4, r6] = [-1e-4, -1e-6, 1e-4, 1e-6].map((d) => valueAt(graph, x + d));
+      if (![v, l4, l6, r4, r6].every(Number.isFinite)) continue;
+      const settles = (p, q) => Math.abs(p - q) <= 1e-2 * (1 + Math.abs(q));
+      if (!settles(l4, l6) || !settles(r4, r6)) continue;
+      const tol = 1e-4 * (1 + Math.abs(v)), tiny = 1e-12 * (1 + Math.abs(v));
+      // Lowest: higher on both sides (a flat piece next to a jump is not a valley), with at
+      // least one side jumping away from it.
+      const kind = l4 > v + tiny && r4 > v + tiny && (l6 > v + tol || r6 > v + tol) ? 'minimum'
+        : l4 < v - tiny && r4 < v - tiny && (l6 < v - tol || r6 < v - tol) ? 'maximum' : null;
+      if (!kind || [...known, ...out].some((l) => l.kind === kind && Math.abs(l.x - x) < 1e-5)) continue;
+      const y = tidy(v);
+      out.push({ kind, x, y, label: `${kind === 'maximum' ? 'Peak (local max)' : 'Valley (local min)'} at (${formatNumber(x)}, ${formatNumber(y)})` });
+    }
+  }
+  return out;
+}
+
+// A point of interest in words, with numbers said the way Settings asks (rounded by default).
+export function spokenLabel(l) {
+  const at = `${say(l.x)}, ${say(l.y ?? 0)}`;
+  switch (l.kind) {
+    case 'x-axis': return `crosses the x-axis at ${say(l.x)}`;
+    case 'y-axis': return `crosses the y-axis at ${say(l.y)}`;
+    case 'origin': return 'the origin, 0, 0';
+    case 'maximum': return `peak at ${at}`;
+    case 'minimum': return `valley at ${at}`;
+    case 'open-point': return `hole at ${at}`;
+    case 'solid-point': return `solid dot at ${at}`;
+    case 'asymptote': return `vertical asymptote at x = ${say(l.x)}`;
+    case 'corner': return `${l.shape || 'corner'} at ${at}${l.slopeLeft !== undefined && l.slopeLeft !== null ? `: ${slopeWord(l.slopeLeft)} before, ${slopeWord(l.slopeRight)} after` : ''}`;
+    case 'endpoint': return `the curve ${l.side === 'end' ? 'ends' : 'starts'} at ${at}${l.included === false ? ', not including that point' : ''}`;
+    default: return l.label || `${l.kind} at ${at}`;
+  }
 }
 
 // ---------- corners, cusps and ends: what Sound Lab's smooth search does not find ----------
@@ -466,10 +550,14 @@ export function shapeMarks(graph, boundary, known = []) {
       add({ kind: 'asymptote', x, y: null, label: `Vertical asymptote at x = ${formatNumber(x)}: the curve runs ${toward[3] > 0 ? 'up' : 'down'} beside it` });
       continue;
     }
+    // The end point itself belongs to the curve when the curve is there at the edge found (x
+    // may be that edge written shorter, -3.14159265 for -pi, a hair outside).
     const here = graph.limitAt(x);
-    const y = tidy(here.defined ? here.y : toward[3]);
-    add({ kind: 'endpoint', x, y, included: here.defined,
-      label: `the curve ${insideRight ? 'starts' : 'ends'} at ${say(x)}, ${say(y)}${here.defined ? '' : ', not including that point'}` });
+    const included = here.defined || (Math.abs(x - edge) < 1e-8 * (1 + Math.abs(x)) && Number.isFinite(valueAt(graph, edge)));
+    const y0 = here.defined ? here.y : included ? valueAt(graph, edge) : toward[3];
+    const y = Math.abs(y0) < 1e-7 ? 0 : tidy(y0);
+    add({ kind: 'endpoint', x, y, included, side: insideRight ? 'start' : 'end',
+      label: `the curve ${insideRight ? 'starts' : 'ends'} at ${say(x)}, ${say(y)}${included ? '' : ', not including that point'}` });
   }
   return out;
 }
@@ -515,6 +603,10 @@ export function describeFunction(f, [x0, x1], hide = []) {
 // hidden it holds only points along the curve (the formula is not in the file at all), so
 // students hear the curve and find the function themselves.
 export function studentGraph(graph) {
+  return exactly(() => studentCopy(graph));
+}
+
+function studentCopy(graph) {
   const opts = graph.student;
   if (!opts || (!opts.hideFormula && !(opts.hide || []).length)) {
     const { student, ...rest } = graph;
@@ -530,7 +622,8 @@ export function studentGraph(graph) {
     return `${name}${parts.length ? `: ${parts.join('; ')}` : ''}`;
   });
   const shown = `Shown for x from ${say(span.x[0])} to ${say(span.x[1])} and y from ${say(span.y[0])} to ${say(span.y[1])}.`;
-  const task = opts.hideFormula ? ' Its formula is for you to find.' : '';
+  // opts.note: why the formula is left out (a worksheet drawing shows only the curve).
+  const task = opts.hideFormula ? ` ${opts.note || 'Its formula is for you to find.'}` : '';
   const out = {
     summary: `${words.join('. ')}. ${shown}${task}`,
     span,
@@ -554,6 +647,9 @@ export function studentGraph(graph) {
       crosses_x_axis_at: marks.filter((l) => l.kind === 'x-axis' || (l.kind === 'origin' && !hide.includes('zeros'))).map((l) => l.x),
       crosses_y_axis_at: hide.includes('yIntercept') ? null : (marks.find((l) => l.kind === 'y-axis' || l.kind === 'origin')?.y ?? null),
       asymptotes: marks.filter((l) => l.kind === 'asymptote').map((l) => l.x),
+      // Sharp corners, cusps and where the curve starts or ends, with the slopes the sounds use.
+      shapes: marks.filter((l) => l.kind === 'corner' || l.kind === 'endpoint').map((l) => ({ kind: l.kind, shape: l.shape, at: [l.x, l.y],
+        slopeLeft: l.slopeLeft, slopeRight: l.slopeRight, included: l.included, label: l.label })),
     });
     // A hole of the formula itself ((x^2-4)/(x-2) at 2) becomes an open dot students hear.
     for (const l of marks.filter((m) => m.kind === 'open-point')) out.points.push({ kind: 'open dot', coordinate: [l.x, l.y] });
@@ -579,7 +675,11 @@ export function sampleCurve(graph, [x0, x1], count = 600) {
 }
 
 // Everything the document's graph line keeps: the functions as LaTeX, the window, the dots.
-export function makeGraph(sources, { x = null, y = null } = {}) {
+export function makeGraph(sources, range = {}) {
+  return exactly(() => makeGraphNow(sources, range));
+}
+
+function makeGraphNow(sources, { x = null, y = null } = {}) {
   const functions = sources.map((s) => compileFunction(s.text ?? s, s.format));
   const xRange = x || chooseXRange(functions);
   const yRange = y || fitYRange(functions, xRange);

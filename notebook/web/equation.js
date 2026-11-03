@@ -300,6 +300,7 @@ export function latexToPlain(latex) {
         let index = null;
         if (src[i] === '[') { const close = src.indexOf(']', i); index = src.slice(i + 1, close); i = close + 1; }
         const [arg, a] = readArg(src, i);
+        if (/[A-Za-z0-9]$/.test(out)) out += ' '; // x sqrt(2+x), not xsqrt(2+x)
         out += index ? (index.trim() === '3' ? `cbrt(${latexToPlain(arg)})` : `root(${latexToPlain(index)}, ${latexToPlain(arg)})`) : `sqrt(${latexToPlain(arg)})`;
         i = a;
       } else if (['text', 'mathrm', 'operatorname', 'mathbf', 'mathit', 'textbf'].includes(name)) {
@@ -317,8 +318,12 @@ export function latexToPlain(latex) {
       } else if (LATEX_WORDS[name] !== undefined) {
         out += ['cdot', 'times', 'le', 'leq', 'ge', 'geq', 'ne', 'neq', 'to', 'approx', 'pm'].includes(name) ? ` ${LATEX_WORDS[name]} ` : LATEX_WORDS[name];
       } else {
-        out += name; // sin, ln, pi, theta, lim ...
-        if (/^[A-Za-z]+$/.test(name) && /^[A-Za-z0-9]/.test(src[i] ?? '')) out += ' ';
+        // sin, ln, pi, theta, lim ... as words, with a space from the letters around them:
+        // \sin{\theta} is "sin theta", 2\pi x is "2 pi x". A bracket stays close: cos(x).
+        const word = /^[A-Za-z]+$/.test(name);
+        if (word && /[A-Za-z0-9]$/.test(out)) out += ' ';
+        out += name;
+        if (word && /^\s*(\{\s*)?([A-Za-z0-9]|\\[A-Za-z])/.test(src.slice(i))) out += ' ';
       }
     } else if (ch === '^' || ch === '_') {
       const [arg, a] = readArg(src, i + 1);

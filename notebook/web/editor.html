@@ -73,25 +73,30 @@
 <dialog id="equation-dialog" aria-labelledby="equation-title">
   <h2 id="equation-title">Equation</h2>
   <form method="dialog" id="equation-form">
-    <label for="equation-text" id="equation-label">Equation as plain text, for example (x^2 - 4)/(x - 2)</label>
+    <label for="equation-text" id="equation-label">Equation as plain text</label>
     <input id="equation-text" autocomplete="off" spellcheck="false">
     <p id="equation-error" class="error" role="alert"></p>
     <div id="equation-preview" class="math-display" aria-hidden="true"></div>
-    <p class="hint">Enter saves. Ctrl+L switches between plain text and LaTeX. Escape cancels.</p>
+    <template class="dialog-help"><p>Type the equation as plain text, for example (x^2 - 4)/(x - 2) or sqrt(x+1), or as LaTeX.</p>
+      <p>Enter saves. Ctrl+L switches between plain text and LaTeX. Escape cancels.</p></template>
   </form>
 </dialog>
 
 <dialog id="graph-dialog" aria-labelledby="graph-title">
   <h2 id="graph-title">Graph from equations</h2>
   <form method="dialog" id="graph-form">
-    <label for="graph-text">Functions of x, one per line, in plain text or LaTeX, for example x^2 - 4 or \frac{1}{x}; a piecewise function as \begin{cases} ... \end{cases}</label>
+    <label for="graph-text">Functions of x, one per line</label>
     <textarea id="graph-text" rows="4" spellcheck="false"></textarea>
-    <label for="graph-range">x from and to, for example -5, 5; leave empty to choose a range that shows every hole and jump</label>
+    <label for="graph-range">x from and to</label>
     <input id="graph-range" autocomplete="off">
-    <label for="graph-yrange">y from and to; leave empty to fit the graph</label>
+    <label for="graph-yrange">y from and to</label>
     <input id="graph-yrange" autocomplete="off">
     <p id="graph-error" class="error" role="alert"></p>
-    <p class="hint">Ctrl+Enter inserts the graph. Escape cancels. On an equation in the document, Ctrl+G graphs it directly.</p>
+    <template class="dialog-help"><p>Write each function of x on its own line, in plain text or LaTeX, for example x^2 - 4 or \frac{1}{x}.
+        A piecewise function is written as \begin{cases} ... \end{cases}. pgfplots code from a .tex file works too.</p>
+      <p>x from and to: for example -5, 5. Left empty, the range is chosen to show every hole and jump.
+        y from and to: left empty, it fits the graph.</p>
+      <p>Ctrl+Enter inserts the graph. Escape cancels. On an equation in the document, Ctrl+G graphs it directly.</p></template>
   </form>
 </dialog>
 
@@ -114,19 +119,20 @@
       <button type="button" id="replace-all" class="replace-only">Replace all</button>
       <button value="close" formnovalidate>Close</button>
     </div>
-    <p class="hint">Enter finds the next match and goes to it in the document. F3 and Shift+F3 find again from the document.</p>
+    <template class="dialog-help"><p>Enter finds the next match and goes to it in the document. F3 and Shift+F3 find again from the document.</p></template>
   </form>
 </dialog>
 
 <dialog id="headings-dialog" aria-labelledby="headings-title">
   <h2 id="headings-title">Headings</h2>
   <form method="dialog" id="headings-form">
-    <label for="heading-list">Headings in the document; up and down arrows choose, Enter goes there</label>
+    <label for="heading-list">Headings in the document</label>
     <select id="heading-list" size="12"></select>
     <div class="buttons">
       <button value="go" id="headings-go">Go to heading</button>
       <button value="close" formnovalidate>Close</button>
     </div>
+    <template class="dialog-help"><p>Up and down arrows choose a heading; Enter goes there. Ctrl+PageDown and Ctrl+PageUp move by heading without this list.</p></template>
   </form>
 </dialog>
 
@@ -148,7 +154,7 @@
       <button value="save" id="sg-save">Save</button>
       <button value="cancel" formnovalidate>Cancel</button>
     </div>
-    <p class="hint">Teacher > Preview student copy lets you hear the graph as students will.</p>
+    <template class="dialog-help"><p>Hidden parts are taken out of the student copy, not just hidden. Teacher > Preview student copy lets you hear the graph as students will.</p></template>
   </form>
 </dialog>
 
@@ -165,14 +171,14 @@
       <button value="insert" id="table-insert">Insert</button>
       <button value="cancel" formnovalidate>Cancel</button>
     </div>
-    <p class="hint">In a table, Tab and Shift+Tab move between cells; Tab in the last cell adds a row.</p>
+    <template class="dialog-help"><p>In a table, Tab and Shift+Tab move between cells; Tab in the last cell adds a row. The Table menu adds and deletes rows and columns.</p></template>
   </form>
 </dialog>
 
 <dialog id="convert-dialog" aria-labelledby="convert-title">
   <h2 id="convert-title">Convert math</h2>
   <form method="dialog" id="convert-form">
-    <label for="convert-input">Math to convert: plain text such as (x^2 - 4)/(x - 2), LaTeX, or MathML</label>
+    <label for="convert-input">Math to convert</label>
     <textarea id="convert-input" rows="4" spellcheck="false"></textarea>
     <label for="convert-from">It is written in</label>
     <select id="convert-from">
@@ -199,7 +205,8 @@
       <button type="button" id="convert-insert">Insert as equation</button>
       <button value="close" formnovalidate>Close</button>
     </div>
-    <p class="hint">The result updates as you type. Ctrl+Enter copies it.</p>
+    <template class="dialog-help"><p>Write plain text such as (x^2 - 4)/(x - 2), LaTeX, or MathML. The result updates as you type; Ctrl+Enter copies it.</p>
+      <p>The preview below the result can be read with MathCAT. "Insert as equation" puts it in the document.</p></template>
   </form>
 </dialog>
 
@@ -208,7 +215,6 @@
   <form method="dialog" id="settings-form">
     <fieldset id="settings-reading">
       <legend>Reading PDFs</legend>
-      <p>PDFs made with LaTeX (most course notes and homework) are read from their own text, by rules: every equation exactly as printed.</p>
       <div id="reading-ai-choice">
         <label for="set-reading_method">How pages are read</label>
         <select id="set-reading_method" name="reading_method">
@@ -260,6 +266,12 @@
         <option value="new">Bump for a solid dot, wind for an open dot, a slide through a corner</option>
         <option value="original">Original: held tone and air breath, no corner sound</option>
       </select>
+      <label for="set-graph_numbers">Numbers you hear</label>
+      <select id="set-graph_numbers" name="graph_numbers">
+        <option value="half">Rounded to the nearest half: 4.19 is 4, 0.89 is 1</option>
+        <option value="tenth">Rounded to one decimal: 4.19 is 4.2</option>
+        <option value="exact">Exact, up to six digits</option>
+      </select>
       <label for="set-step">Step when tracing and moving</label>
       <select id="set-step" name="step" data-number>
         <option value="0.1">0.1</option>
@@ -297,6 +309,18 @@
       <button value="cancel" formnovalidate>Cancel</button>
       <button type="button" id="settings-defaults">Restore defaults</button>
     </div>
+    <template class="dialog-help"><p>PDFs made with LaTeX (most course notes and homework) are read from their own text, by rules: every equation exactly as printed.
+      The AI add-on, when installed, is only for pictures and for pages whose maths is not stored as text.</p>
+      <p>Graph sound: the sound profile, the bass line while playing, the step, the speed, the sounds for points of interest and the volumes.
+      Numbers you hear are rounded to the nearest half unless you choose otherwise.</p></template>
+  </form>
+</dialog>
+
+<dialog id="help-dialog" aria-labelledby="help-title" aria-describedby="help-text">
+  <h2 id="help-title">Help</h2>
+  <div id="help-text"></div>
+  <form method="dialog">
+    <div class="buttons"><button value="close" id="help-close">Close</button></div>
   </form>
 </dialog>
 

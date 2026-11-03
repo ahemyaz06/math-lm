@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Recognition Lab</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+  <script src="/pdf.js" defer></script>
+</head>
+<body>
+<main>
+  <header><h1>Recognition Lab</h1></header>
+  <div class="source-picker">
+    <label for="source-type">File type</label>
+    <select id="source-type" aria-controls="pdf-workspace image-workspace">
+      <option value="pdf">PDF</option>
+      <option value="image">Image</option>
+    </select>
+  </div>
+
+  <section id="pdf-workspace" aria-label="PDF">
+    <form id="pdf-form">
+      <label for="pdf-file">Choose a PDF <span id="pdf-limit" class="hint">(up to 20 MB)</span></label>
+      <input id="pdf-file" type="file" accept="application/pdf,.pdf" required>
+      <p id="pdf-preflight" class="hint" role="status" aria-atomic="true" hidden></p>
+      <details class="options">
+        <summary>Options</summary>
+        <div class="option-fields">
+          <label for="pdf-first">First PDF page</label>
+          <input aria-describedby="pdf-range-help" id="pdf-first" type="number" min="1" value="1" required>
+          <label for="pdf-last">Last PDF page</label>
+          <input aria-describedby="pdf-range-help" id="pdf-last" type="number" min="1">
+          <p id="pdf-range-help" class="hint">Pages run in batches of up to 100. Leave the last page blank for the end. Use PDF page numbers.</p>
+          <label for="pdf-quality">Inspection method</label>
+          <select id="pdf-quality"><option value="accurate">Quality</option><option value="basic">Basic</option></select>
+          <label class="check"><input id="pdf-vlm" type="checkbox" aria-describedby="pdf-vlm-help" disabled> Include local AI descriptions (slower)</label>
+          <p id="pdf-vlm-help" class="hint" hidden>Local AI is unavailable.</p>
+        </div>
+      </details>
+      <div class="actions"><button id="pdf-submit" type="submit">Read PDF</button><button id="pdf-cancel" class="secondary" type="button" disabled hidden>Cancel</button><button id="pdf-resume" type="button" hidden>Resume PDF</button></div>
+    </form>
+    <p id="pdf-status" class="status" role="status" aria-atomic="true">Ready.</p>
+    <progress id="pdf-progress" value="0" max="1" aria-label="PDF pages processed" hidden></progress>
+    <div id="pdf-results" hidden>
+      <h2>Graphs</h2>
+      <label for="pdf-region">Graph</label><select id="pdf-region"></select>
+      <div class="actions"><button id="pdf-open" type="button">Read graph</button><button id="pdf-previous" class="secondary" type="button">Previous</button><button id="pdf-next" class="secondary" type="button">Next</button><button id="pdf-save" type="button">Save descriptions</button></div>
+      <p id="pdf-selection" role="status" aria-atomic="true"></p>
+      <ul id="pdf-warnings" class="warnings"></ul>
+      <details>
+        <summary>Source text and export</summary>
+        <label for="pdf-page">Jump to PDF page</label><select id="pdf-page"></select>
+        <ul id="pdf-page-warnings" class="warnings"></ul>
+        <h3>Page text</h3><p id="pdf-page-text" class="source-text"></p>
+        <h3>Nearby text</h3><p id="pdf-context" class="source-text"></p>
+        <p class="hint">Extracted text and its association with a region may contain errors. A candidate or whole-page fallback is not a confirmed graph.</p>
+        <button id="pdf-download" class="secondary" type="button">Download inspection JSON</button>
+      </details>
+    </div>
+    <details id="pdf-history"><summary>Recent PDFs</summary><button id="pdf-history-refresh" class="secondary" type="button">Refresh</button><p id="pdf-history-status" class="hint" role="status" aria-atomic="true"></p><ul id="pdf-history-list"></ul></details>
+  </section>
+
+  <section id="image-workspace" aria-label="Image" hidden>
+    <form id="inspect">
+      <label for="image">Choose an image <span class="hint">(PNG or JPEG, up to 10 MB)</span></label>
+      <input type="file" id="image" accept="image/png,image/jpeg,image/gif,image/webp,image/bmp,image/tiff,.png,.jpg,.jpeg,.gif,.webp,.bmp,.tif,.tiff" required>
+      <details class="options"><summary>Options</summary><label class="check"><input type="checkbox" id="use-vlm"> Include a local AI description</label></details>
+      <button id="submit" type="submit">Read image</button>
+    </form>
+  </section>
+  <p id="status" class="status" role="status" aria-atomic="true" hidden>Ready.</p>
+
+  <section id="result" hidden aria-labelledby="result-title">
+    <h2 id="result-title">Reading</h2>
+    <p id="summary"></p><p id="verbal-description"></p><p id="scale"></p>
+    <section id="reading" hidden>
+      <label for="fragment">Curve fragment</label><select id="fragment"></select>
+      <button type="button" id="enter">Explore curve</button>
+      <details class="keyboard-help"><summary>Explorer keys</summary><p>J or Left: backward. K or Right: forward. Brackets: change fragment. Home and End: fragment ends. F: change step. I: describe the graph. P: marked points. N: text notes. Tab: leave the explorer.</p></details>
+      <div id="explorer" role="application" tabindex="0" aria-label="Graph explorer" aria-keyshortcuts="J K [ ] F I P N Home End ArrowLeft ArrowRight">
+        <div class="canvas-grid">
+          <figure><figcaption>Source</figcaption><canvas id="preview" aria-hidden="true"></canvas></figure>
+          <figure><figcaption>Reconstruction</figcaption><canvas id="reconstructed" aria-hidden="true"></canvas></figure>
+        </div>
+        <p id="position" aria-live="off"></p>
+      </div>
+      <p id="point-status" role="status" aria-atomic="true"></p>
+      <section id="recognized-summary"><h3>Curves, points and notes</h3><ul id="objects-list"></ul></section>
+      <button type="button" id="table-toggle" class="secondary" aria-expanded="false">Show sampled values</button><div id="table-wrap" hidden></div>
+    </section>
+    <section id="vlm-section" hidden><h3>Local AI description</h3><p id="vlm-provenance" class="hint">AI description; numerical scale unverified.</p><p id="vlm-output"></p></section>
+    <div class="actions"><button type="button" id="run-vlm">Ask local AI</button></div>
+    <details class="result-more">
+      <summary>Details and downloads</summary>
+      <div id="warning-section"><h3>Uncertainty</h3><ul id="warnings" class="warnings"></ul></div>
+      <h3>Evidence</h3><ul id="evidence"></ul>
+      <button type="button" id="detail-toggle" class="secondary" aria-expanded="false" aria-controls="details">Show measured details</button>
+      <section id="details" hidden><h3>Detected text</h3><p class="hint">Machine readings may be wrong. Scores are not probabilities of correctness.</p><ul id="ocr"></ul></section>
+      <div class="actions"><button type="button" id="download" class="secondary">Download reading JSON</button><button type="button" id="download-gtool" class="secondary" hidden>Download GTool JSON</button><button type="button" id="download-image" class="secondary" hidden>Download reconstruction PNG</button></div>
+    </details>
+  </section>
+  <footer>
+    <details><summary>Settings</summary>
+      <form id="settings-form">
+        <label for="settings-upload-limit">PDF upload limit (MB)</label><input id="settings-upload-limit" type="number" min="1" max="100" value="20" required>
+        <label for="settings-batch-pages">Pages per batch</label><input id="settings-batch-pages" type="number" min="1" max="100" value="100" required>
+        <button id="settings-save" type="submit">Save settings</button>
+      </form>
+      <p id="settings-status" class="hint" role="status" aria-atomic="true"></p>
+    </details>
+    <details><summary>App</summary><p class="hint">Files are processed on this computer. Readings may miss or misinterpret graph details. Numerical coordinates are estimates.</p><button type="button" id="stop" class="secondary">Stop recognizer</button></details>
+  </footer>
+</main>
+</body>
+</html>

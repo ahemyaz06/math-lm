@@ -1,0 +1,4 @@
+# Higher-quality figure localization. CPU wheels can be installed from PyTorch's CPU index.
+torch==2.14.1
+transformers==5.20.2
+safetensors==0.8.0

@@ -4,13 +4,30 @@
 // coordinate when it stops; Tab switches functions.
 import { CalculusSoundEngine } from '/sound/sound-engine.js';
 import { compileEquation, detectLandmarks, findStepEvents, formatNumber } from '/sound/graph-math.js';
-import { compileFunction, landmarksOf } from './graphs.js';
+import { HIDEABLE, compileFunction, describeFunction, landmarksOf, say, setNumberStyle, spokenLabel } from './graphs.js';
 
 const STEPS = [0.1, 0.25, 0.5, 1];
-const say = (n) => formatNumber(Math.abs(n) < 1e-9 ? 0 : n).replace('-', 'minus ');
+// say() rounds as Settings asks (nearest half by default); exact() is for what you chose
+// yourself: where the cursor is along x (already on your step) and the step size.
+const exact = (n) => formatNumber(Math.abs(n) < 1e-9 ? 0 : n).replace('-', 'minus ');
+// Numbers inside a stored description, rounded the same way (descriptions without a formula).
+// A dot in words, numbers rounded; what the stored words say it is (a jump, a hole) is kept.
+function dotWords(p) {
+  const [x, y] = p.coordinate;
+  const dot = `${p.kind} at ${say(x)}, ${say(y)}`;
+  const was = p.label || '';
+  if (/^jump at/.test(was)) return `jump at x = ${say(x)}: ${dot}`;
+  if (/^hole at/.test(was)) return `hole at ${say(x)}, ${say(y)}: both sides go to ${say(y)}`;
+  if (/^the value at/.test(was)) return `the value at x = ${say(x)} is ${say(y)}, away from the curve`;
+  return dot;
+}
+const roundWords = (text) => text.replace(/(minus )?(\d+(?:\.\d+)?(?:e(?:minus |\+)?\d+)?)/g, (m, minus, num) => {
+  const v = Number(num.replace('eminus ', 'e-')) * (minus ? -1 : 1);
+  return Number.isFinite(v) ? say(v) : m;
+});
 
 // A function made from the exact points the PDF reader found (straight pieces or samples).
-function sampledFunction(curve) {
+function sampledFunction(curve, dots = []) {
   // Samples may have null between pieces (a student copy's curve breaks at a jump or an
   // asymptote); between pieces there is no point.
   const segments = [[]];
@@ -22,8 +39,23 @@ function sampledFunction(curve) {
   return {
     label: curve.label && curve.color ? `${curve.label}, ${curve.color}` : curve.label || `${curve.color} ${curve.kind === 'curve' ? 'curve' : 'line'}`,
     lo, hi,
+    // Which piece x is on, so the picture lifts its pen between pieces (a jump).
+    piece(x) { return pieces.findIndex((s) => x >= s[0].x - 1e-9 && x <= s.at(-1).x + 1e-9); },
     limitAt(x) {
-      const pts = pieces.find((s) => x >= s[0].x - 1e-9 && x <= s.at(-1).x + 1e-9);
+      // Where two pieces meet (a jump), the drawn dots say which height is the point: the
+      // solid dot's, and an open dot's height is only approached.
+      const here = pieces.filter((s) => x >= s[0].x - 1e-9 && x <= s.at(-1).x + 1e-9);
+      const ends = here.map((s) => (Math.abs(s[0].x - x) < 1e-9 ? s[0].y : Math.abs(s.at(-1).x - x) < 1e-9 ? s.at(-1).y : null)).filter((v) => v !== null);
+      const dotAt = (kind) => dots.find((d) => d.kind === kind && Math.abs(d.coordinate[0] - x) < 1e-9 && ends.some((v) => Math.abs(v - d.coordinate[1]) < 1e-6));
+      if (ends.length) {
+        const solid = dotAt('solid dot');
+        if (solid) return { defined: true, y: solid.coordinate[1] };
+        const open = dotAt('open dot');
+        const other = ends.find((v) => !open || Math.abs(v - open.coordinate[1]) >= 1e-6);
+        if (open && other === undefined) return { defined: false, hole: true, y: open.coordinate[1] };
+        if (open) return { defined: true, y: other };
+      }
+      const pts = here[0];
       if (!pts || (pts.length < 2 && Math.abs(pts[0].x - x) > 1e-9)) return { defined: false, hole: false, y: NaN };
       let k = pts.findIndex((p) => p.x >= x);
       if (k <= 0) return { defined: true, y: pts[0].y };
@@ -39,9 +71,11 @@ function sampledFunction(curve) {
         out.push({ kind: 'y-axis', x: 0, y: curve.crosses_y_axis_at, label: `crosses the y-axis at ${say(curve.crosses_y_axis_at)}` });
       }
       for (const a of curve.asymptotes || []) out.push({ kind: 'asymptote', x: a, y: null, label: `vertical asymptote at x = ${say(a)}` });
+      for (const sh of curve.shapes || []) out.push({ ...sh, x: sh.at[0], y: sh.at[1] });
       if (curve.kind !== 'curve') {
         const c = curve.corners || [];
         for (let i = 1; i < c.length - 1; i += 1) {
+          if (!c[i - 1] || !c[i] || !c[i + 1]) continue; // a break between pieces is no corner
           const [x, y] = c[i];
           out.push({ kind: 'corner', x, y, slopeLeft: (y - c[i - 1][1]) / (x - c[i - 1][0]), slopeRight: (c[i + 1][1] - y) / (c[i + 1][0] - x), label: `corner at ${say(x)}, ${say(y)}` });
         }
@@ -59,7 +93,7 @@ function equationFunction(text) {
 // A function written in the document (LaTeX, piecewise too), see graphs.js.
 function latexFunction({ latex }) {
   const f = compileFunction(latex, 'latex');
-  return { label: f.label, lo: -Infinity, hi: Infinity, limitAt: (x) => f.graph.limitAt(x), graph: f.graph };
+  return { label: f.label, lo: -Infinity, hi: Infinity, limitAt: (x) => f.graph.limitAt(x), graph: f.graph, compiled: f };
 }
 
 export class GraphMode {
@@ -79,7 +113,7 @@ export class GraphMode {
   // Settings > Graph sound (the values Sound Lab and GTool used to set on their own).
   applySettings(s) {
     this.settings = { sound_profile: 'gentle', bass_mode: 'x-and-y', step: 0.5, play_speed_ms: 400, cues: true,
-      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', ...this.settings, ...s };
+      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', graph_numbers: 'half', ...this.settings, ...s };
     const v = this.settings;
     this.sound.setSoundProfile(v.sound_profile);
     this.sound.setBassOutlineMode(v.bass_mode);
@@ -88,6 +122,7 @@ export class GraphMode {
     this.sound.setBassOutlineVolume(v.bass_volume);
     this.sound.setStepDelayMs(v.play_speed_ms);
     this.sound.setDotSounds(v.dot_sounds);
+    setNumberStyle(v.graph_numbers);
   }
 
   // graph: { title, summary, span: {x:[a,b], y:[c,d]}, curves: [...], points: [...], equations: [...] }
@@ -98,7 +133,7 @@ export class GraphMode {
     this.sound.setWindow(span);
     this.boundary = Math.max(Math.abs(span.x[0]), Math.abs(span.x[1]), 1);
     this.functions = [
-      ...(graph.curves || []).filter((c) => !(c.kind !== 'curve' && c.corners?.length === 2 && c.corners[0][0] === c.corners[1][0])).map(sampledFunction),
+      ...(graph.curves || []).filter((c) => !(c.kind !== 'curve' && c.corners?.length === 2 && c.corners[0][0] === c.corners[1][0])).map((c) => sampledFunction(c, graph.points || [])),
       ...(graph.equations || []).map(equationFunction),
       ...(graph.functions || []).map(latexFunction),
     ];
@@ -106,7 +141,7 @@ export class GraphMode {
     this.shapes = this.functions.flatMap((f) => (f.graph ? landmarksOf(f.graph, this.boundary) : []));
     this.verticals = (graph.curves || []).filter((c) => c.kind !== 'curve' && c.corners?.length === 2 && c.corners[0][0] === c.corners[1][0]);
     this.dots = (graph.points || []).map((p) => ({ kind: p.kind === 'open dot' ? 'open-point' : 'solid-point', x: p.coordinate[0], y: p.coordinate[1],
-      label: p.label || `${p.kind} at ${say(p.coordinate[0])}, ${say(p.coordinate[1])}`, owner: p.function ?? null }));
+      label: dotWords(p), owner: p.function ?? null }));
     this.index = 0;
     this.step = STEPS.includes(this.settings.step) ? this.settings.step : 0.5;
     this.free = { x: 0, y: 0 };
@@ -138,10 +173,12 @@ export class GraphMode {
     // A function's own dots (a piecewise jump's open end is off the curve), or any dot it passes through.
     const owner = this.index - this.functions.length + (this.graph.functions || []).length;
     const onCurve = this.dots.filter((d) => (d.owner !== null ? d.owner === owner
-      : Math.abs((f.limitAt(d.x).y ?? NaN) - d.y) < 0.15 || !f.limitAt(d.x).defined));
+      : Math.abs((f.limitAt(d.x).y ?? NaN) - d.y) < 0.15 || !f.limitAt(d.x).defined
+        || (f.piece && f.piece(d.x - 1e-6) !== f.piece(d.x + 1e-6) && f.piece(d.x - 1e-6) >= 0))); // both dots of a drawn jump
     // A student copy can keep some points of interest for the student to find.
     const hidden = new Set(this.graph.hidden || []);
-    this.landmarks = [...own, ...onCurve].filter((l) => !hidden.has(l.kind) && l.x >= lo - 1e-9 && l.x <= hi + 1e-9).sort((a, b) => a.x - b.x);
+    this.landmarks = [...own.map((l) => ({ ...l, label: spokenLabel(l) })), ...onCurve]
+      .filter((l) => !hidden.has(l.kind) && l.x >= lo - 1e-9 && l.x <= hi + 1e-9).sort((a, b) => a.x - b.x);
     if (start) this.x = this.onGrid(Math.max(lo, Math.min(hi, 0)));
     this.prevY = null;
   }
@@ -161,12 +198,12 @@ export class GraphMode {
   where() {
     if (!this.tracing) {
       const on = this.functionsAt(this.free.x, this.free.y);
-      return `x ${say(this.free.x)}, y ${say(this.free.y)}${on.length ? `, on ${on.map((f) => f.label).join(' and ')}` : ''}`;
+      return `x ${exact(this.free.x)}, y ${exact(this.free.y)}${on.length ? `, on ${on.map((f) => f.label).join(' and ')}` : ''}`;
     }
     const lim = this.fn.limitAt(this.x);
-    if (lim.defined) return `x ${say(this.x)}, y ${say(lim.y)}`;
-    if (lim.hole) return `x ${say(this.x)}: a hole; the curve approaches y ${say(lim.y)}`;
-    return `x ${say(this.x)}: no point on ${this.fn.label} here`;
+    if (lim.defined) return `x ${exact(this.x)}, y ${say(lim.y)}`;
+    if (lim.hole) return `x ${exact(this.x)}: a hole; the curve approaches y ${say(lim.y)}`;
+    return `x ${exact(this.x)}: no point on ${this.fn.label} here`;
   }
 
   functionsAt(x, y) {
@@ -241,7 +278,16 @@ export class GraphMode {
   }
 
   describe() {
-    const parts = [this.graph.summary || ''];
+    // Functions with their formula are described afresh, numbers rounded as Settings asks;
+    // a stored description (a student copy, a PDF graph) has its numbers rounded the same way.
+    const span = this.span;
+    const own = this.functions.filter((f) => f.compiled);
+    const hiddenKinds = new Set(this.graph.hidden || []);
+    const hide = Object.keys(HIDEABLE).filter((k) => HIDEABLE[k].kinds.every((kind) => hiddenKinds.has(kind)));
+    const words = own.length
+      ? `${own.map((f) => { const p = describeFunction(f.compiled, span.x, hide); return `${f.label}${p.length ? `: ${p.join('; ')}` : ''}`; }).join('. ')}. Shown for x from ${say(span.x[0])} to ${say(span.x[1])} and y from ${say(span.y[0])} to ${say(span.y[1])}.`
+      : roundWords(this.graph.summary || '');
+    const parts = [words];
     if (this.verticals.length) parts.push(`${this.verticals.length} vertical ${this.verticals.length === 1 ? 'line is' : 'lines are'} not traced, because a vertical line is not a function of x.`);
     this.speak(parts.join(' ').trim() || 'No description.');
   }
@@ -292,7 +338,7 @@ export class GraphMode {
     if (k === 'f' || k === 'F') {
       handled();
       this.step = STEPS[(STEPS.indexOf(this.step) + (e.shiftKey ? STEPS.length - 1 : 1)) % STEPS.length];
-      this.speak(`Step ${say(this.step)}.`);
+      this.speak(`Step ${exact(this.step)}.`);
       return;
     }
     if (k === '?' || k === 'h' || k === 'H') {
@@ -318,7 +364,8 @@ export class GraphMode {
         const x = x0 + (x1 - x0) * i / 600, l = f.limitAt(x);
         // The pen lifts at a jump or an asymptote, so no false line joins the two sides
         // (where two rows of a piecewise function meet at the same height, it carries on).
-        const joined = prev !== null && (!f.graph || f.graph.isContinuousBetween(prev.x, x) || Math.abs(l.y - prev.y) < (y1 - y0) * 0.02);
+        const joined = prev !== null && (f.graph ? f.graph.isContinuousBetween(prev.x, x) || Math.abs(l.y - prev.y) < (y1 - y0) * 0.02
+          : !f.piece || f.piece(prev.x) === f.piece(x));
         if (l.defined && l.y >= y0 - room && l.y <= y1 + room) { d += `${pen && joined ? 'L' : 'M'}${px(x).toFixed(1)},${py(l.y).toFixed(1)}`; pen = true; } else pen = false;
         prev = l.defined ? { x, y: l.y } : null;
       }

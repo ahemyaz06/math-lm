@@ -5,6 +5,7 @@ node_modules/
 dist/
 *.log
 *.pid
+local-paths.json
 recognition-lab/models/
 recognition-lab/bin/
 recognition-lab/outputs/

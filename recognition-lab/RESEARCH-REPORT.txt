@@ -1,0 +1,89 @@
+Graph-image recognition and numerical reading: v0.3.0 experiment and hybrid VLM upgrade
+
+17 October 2026. Detection baseline 0.1.0; numerical reader 0.2.0; hybrid CV + VLM upgrade 0.3.0.
+
+What was collected
+
+The OpenStax algebra/precalculus source repository supplied 3,035 PNG/JPEG illustrations, or 3,016 distinct files after SHA-256 deduplication. These are textbook images, not 3,035 certified coordinate planes. They include equation graphs, empty planes, geometry, polar diagrams, number lines, photographs and other material. All distinct files received a geometry scan; 2,236 contained candidate intersecting horizontal/vertical strokes. This is a permissive filter count, not a recognition success rate.
+
+Source descriptions were available for 2,341 files. Overlapping keyword counts include graph in 1,401 descriptions, coordinate in 340, grid in 62, polar in 46, and blank in 16. These counts do not establish the most common styles across the internet. Descriptions help organize evaluation data; the detector itself receives image pixels only, not file names, descriptions, textbook answers or test labels.
+
+The first detailed detector runs covered 256 images: 48 development examples, 80 separately selected textbook examples, 64 generated challenges, and 64 ChartQA images. ChartQA sampling used seed 1729 from the 1,000 test-image entries returned by GitHub. It is a bounded convenience sample, not a representative sample of all charts. Thousands of images were scanned automatically; they were not all manually reviewed or fully read with OCR.
+
+In v0.3.0, the local demo-images benchmark suite was expanded from 8 images to 22 diverse images (documented in demo-images/SOURCES.md):
+- 8 original synthetic fixtures (5 positive coordinate planes: parabola-0.png, parabola-1.png, circle-0.png, no_grid-0.png, empty-0.png; 3 negative controls: person-0.png, table-0.png, tree-0.png).
+- 8 real OpenStax Precalculus textbook figures (CC BY 4.0): openstax-parabola-vertex.jpg, openstax-intersecting-lines.jpg, openstax-absolute-value.jpg, openstax-cubic-polynomial.jpg, openstax-quadrant1-piecewise.jpg, openstax-quadrant1-slope.jpg, openstax-asymmetric-sqrt.jpg, openstax-ellipse-annotated.jpg.
+- 6 synthetic perspective-angled, zoomed, and quadrant-specific challenges: angled-whiteboard-0.png, angled-photo-0.png, quadrant1-line-0.png, quadrant2-curve-0.png, zoomed-out-0.png, zoomed-in-0.png.
+
+Conventions found in the inspected examples
+
+Grid lines are optional; an empty plane can have no curve. Labels can be x/y, f(x), t, h(t), g, C(g), or even r/i for a complex plane. Axes can lie at the edge (Quadrant I or Quadrant II views) or cross away from the image center. The visible crossing must not automatically be declared the origin, though when the calibrated scale places zero within a fraction of a tick step of the geometric axis line, locking the zero offset to the geometric axis eliminates sub-pixel drift. X and Y scales can differ by an order of magnitude (e.g., X in [0, 4] and Y in [0, 60], or X in [-4, 4] and Y in [-24, 24]).
+
+Tick labels can contain minus signs, decimals, fractions, pi, thousands separators or scientific notation. Logarithmic axes and polar/3D coordinates require different mappings. This reader supports axis-aligned linear scales with signed decimal labels; it deliberately rejects unsupported notation rather than inventing values.
+
+The equation family does not determine whether a coordinate plane exists. Lines, parabolas, cubics, square-root functions, exponentials, logarithmic functions, piecewise curves, circles, ellipses and sideways parabolas can use similar axes. A circle or vertical line is a valid drawing on a coordinate plane even though it is not a function of X.
+
+Implemented detector, numerical reader, and local VLM (v0.3.0)
+
+The v0.3.0 pipeline combines deterministic OpenCV + RapidOCR computer vision with an optional local 4-bit Vision-Language Model:
+1. Deterministic CV + OCR engine (detector.py and reader.py, v0.3.0):
+   - Uses OpenCV, NumPy, Pillow, and local RapidOCR/PP-OCRv4 through ONNX Runtime.
+   - Splits merged horizontal tick strings (such as "-5-4-3-2-1", "345", or "-10-8-6-4-Z" where OCR misreads "2" as "Z") using horizontal ink-projection valleys rather than uniform box width division.
+   - Detects minus signs omitted by OCR via high-contrast crop inspection and dual binary + anti-aliased 3x upscaled tick crops.
+   - Locks regular tick lattices using least-squares over inlier peaks and requires odd half-step evidence before halving tick steps.
+   - Separates colored strokes (red wrap-around 0..12 and 166..179, orange, green, cyan-blue 81..135, purple) and dark strokes (including pitch-black JPEG strokes where V<=45).
+   - Preserves curve continuity through text boxes and across axis crossings or dot bulges via tangent-aligned path merging (_merge_smooth_paths).
+   - Fits parametric equations for straight lines (slope-intercept and vertical), quadratics (snapped in vertex form y = a*(x-h)^2 + k with slope-normalized residuals), cubics (y = a*x^3 + b*x^2 + c*x + d), monotonic square-root curves (y = a*sqrt(x-h) + k), circles, ellipses, symmetric absolute-value V-graphs (y = a*|x-h| + k via two-arm line intersection), and 2-segment piecewise linear functions.
+   - Detects isolated, on-curve, and on-axis filled marked points via distance-transform and morphological disc opening while filtering out curve-tip and axis-tip arrowheads.
+   - Generates plain-English verbal descriptions (spoken when pressing I in focus mode) with calibrated axis ranges and integer coordinates along the curves, plus reconstructed coordinate-plane PNGs and GTool JSON documents.
+
+2. Local 4-bit Vision-Language Model (vlm_helper.py, v0.3.0):
+   - Upgraded from Qwen2.5-VL-3B (deleted) to Qwen3-VL-8B-Instruct (Q4_K_M, 5,027.8 MB + 752.3 MB mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf in models/qwen3-vl-8b).
+   - Automatically enumerates Vulkan devices and selects the discrete NVIDIA GeForce RTX 5060 Laptop GPU (--device Vulkan1 --split-mode none) rather than integrated graphics (Vulkan0), achieving ~25s cold CLI load and ~2-4s warm HTTP server inference while using ~5.8 GB VRAM.
+
+v0.3.0 benchmark evaluation results on the 22-image suite
+
+On the 22-image demo-images suite (19 positive Cartesian coordinate planes and 3 negative controls):
+- Plane classification & scale calibration: 19 / 19 positive coordinate planes (100%) are classified as likely_coordinate_plane with estimated_coordinates and verified X/Y scales; 3 / 3 negative controls (person-0.png, table-0.png, tree-0.png) are rejected with status != likely_coordinate_plane and reading.status == unreadable (0 false positives).
+- Parametric equation recovery on all 18 plotted positive graphs (empty-0.png has 0 curves):
+  * parabola-0.png, parabola-1.png: y=0.25*x^2-2, vertex (0, -2)
+  * circle-0.png: x^2+y^2=9, center (0, 0), radius 3
+  * no_grid-0.png: y=0.6*x+1
+  * angled-photo-0.png: y=1*abs(x-1)-2, vertex (1, -2), 3/3 marked points
+  * angled-whiteboard-0.png: y=-0.5*x+2, 3/3 marked points
+  * quadrant1-line-0.png: y=0.5*x+2, X in [0, 10], Y in [0, 10], 3/3 marked points
+  * quadrant2-curve-0.png: y=0.25*x^2+2.5*x+7.25, vertex (-5, 1), 3/3 marked points
+  * zoomed-in-0.png: y=1*x^3-1*x, X in [-2, 2], Y in [-2, 2], 3/3 marked points
+  * zoomed-out-0.png: y=0.02*x^2-30, X in [-50, 50], Y in [-50, 50], 3/3 marked points
+  * openstax-absolute-value.jpg: y=1*abs(x-2) and y=0
+  * openstax-asymmetric-sqrt.jpg: y=1*sqrt(x+3), note "f"
+  * openstax-cubic-polynomial.jpg: y=1*x^3+1*x-2, X in [-4, 4], Y in [-24, 24]
+  * openstax-ellipse-annotated.jpg: ((x-4)/6)^2+((y-2.1)/4.6)^2=1 and y=2, 5 marked points, 5 coordinate notes
+  * openstax-intersecting-lines.jpg: y=-1.3333*x+1 and y=0.75*x-2
+  * openstax-parabola-vertex.jpg: y=-1*x^2+6*x-8, vertex (3, 1), 5/5 marked points ((3, 1), (2, 0), (4, 0), (0, -8), (6, -8))
+  * openstax-quadrant1-piecewise.jpg: y=25 for x<=2; y=10*x+5 for x>=2, breakpoint (2, 25)
+  * openstax-quadrant1-slope.jpg: y=-0.6667*x+5, 3/3 marked points ((0, 5), (3, 3), (6, 1))
+
+Historical frozen baseline (v0.1.0 / v0.2.0)
+
+The earlier frozen baseline on 80 textbook images and 64 synthetic fixtures is preserved for historical comparison: in v0.1.0, 27 of 59 reviewed Cartesian-plane images were marked likely (45.8%), and v0.2.0 recovered scales on 15 of 59 textbook plane images and 20 of 36 synthetic positives, with zero false positives on negatives.
+
+Safeguards and remaining work
+
+Unreadable scales produce no numerical coordinates. Text recognized from an image is treated as text, never as an instruction. Missing signs are only restored when verified by image minus-bar evidence. Severe perspective distortion (>15 degrees tilt), hand-drawn uneven tick spacing without linear scale consistency, polar/3D/logarithmic axes, and multi-panel subplots remain outside the deterministic linear calibrator's scope, where the local Qwen3-VL-8B model provides a high-level semantic fallback.
+
+Files and sources
+
+OpenStax, Rice University (CC BY 4.0 / CC BY-NC-SA 4.0):
+- https://openstax.org/books/precalculus-2e
+- https://github.com/openstax/osbooks-college-algebra-bundle
+See demo-images/SOURCES.md and THIRD-PARTY-NOTICES.txt for per-image attributions and licenses.
+
+Qwen3-VL-8B-Instruct (Apache-2.0):
+- https://huggingface.co/Qwen/Qwen3-VL-8B-Instruct-GGUF
+
+llama.cpp (MIT):
+- https://github.com/ggml-org/llama.cpp
+
+RapidOCR (Apache-2.0):
+- https://github.com/RapidAI/RapidOCR

@@ -64,6 +64,8 @@ def _spec():
         'free_move_tones': (True, [True, False]),
         # Dots and corners: bump, wind and corner slide ('new') or the earlier sounds
         'dot_sounds': ('new', ['new', 'original']),
+        # Numbers said in graph mode: to the nearest half (4.19 is 4), one decimal, or exact
+        'graph_numbers': ('half', ['half', 'tenth', 'exact']),
     }
 
 

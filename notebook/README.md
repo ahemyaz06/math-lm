@@ -14,7 +14,7 @@ buttons on the toolbar above the document, each with its name written on it. The
 one Tab stop: the arrow keys move along it, and F6 goes between the toolbar and the document.
 F1 opens the keyboard shortcuts page (made from the menus, so it is always right).
 
-Needs: Recognition Lab's Python environment and `npm install` in the graphing folder
+Needs: Recognition Lab's Python environment and `npm install` in the main folder
 (for the window). The reading model is optional (see "The AI add-on").
 
 ## The portable version (no AI, nothing to install)
@@ -24,8 +24,7 @@ Needs: Recognition Lab's Python environment and `npm install` in the graphing fo
 anywhere on a 64-bit Windows PC and double-click `Math Notebook.exe`: it carries its own
 Python and the window, and keeps its settings and read PDFs in a `data` folder beside
 the exe. It is this same notebook without the AI add-on; `Read me first.txt` inside
-explains it. `node notebook\test_portable.mjs` checks a build from a copied folder.
-
+explains it.
 ## Writing (the keys are Word's)
 
 - Type normally. Ctrl+B, Ctrl+I, Ctrl+U: bold, italic, underline (the status line says
@@ -79,7 +78,10 @@ and display maths become equations (each row of an align its own line), itemize 
 become lists with their parts, tabular becomes a table, bold and italic stay, and the file's own
 \newcommand definitions are expanded. Graphs drawn with pgfplots (\addplot) become graphs you
 explore by sound (pgfplots measures sin and cos in degrees unless deg() is used; this is
-followed). Pictures and TikZ drawings are named, not shown. Whatever could not be read is a
+followed). TikZ drawings of functions (`\draw plot (\x, {formula})`) become graphs too: each
+plot is a piece of the function, the axes drawn through 0 give the window, and `\node at
+(x,y) {$\circ$}` or `{\textbullet}` are its open and solid dots. Other pictures and TikZ
+drawings are named, not shown. Whatever could not be read is a
 review note at the end (F8).
 
 Asking a professor for the .tex files is a small request: they already have them, and
@@ -201,6 +203,11 @@ Insert > Graph from equations (Ctrl+Shift+G) makes a graph from functions you ty
 - Period and comma: next and previous point of interest (peaks, zeros, corners, dots).
 - Home and End: ends of the function. V reads the point, I describes the graph,
   F changes the step (0.1, 0.25, 0.5, 1), question mark lists the keys.
+- Numbers are said rounded to the nearest half (a height of 4.19 is "4", a zero at 1.73 is
+  "1.5", 0.00004 is "0"); where you are along x is said as you stepped. Settings > Graph sound >
+  Numbers you hear can choose one decimal or exact. The document's own text stays exact.
+- A graph drawn in a worksheet (TikZ) keeps only what the page shows: the curve, its points
+  and dots, not its formula.
 - Sounds: the gentle profile (soft attacks), a small bump for solid dots, a breath of wind
   for open dots (holes), a slide through sharp corners (down then up for a valley corner,
   up then down for a peak), a chime at the origin. At a jump both dots are heard, each at its
@@ -234,20 +241,6 @@ MATH_NOTEBOOK_MODELS sets the default).
   read from .tex files; they are named in a review note.
 - The older browser page (`/` instead of the desktop app) still works but is not developed further.
 
-## Tests
-
-`node run-all-tests.mjs` from the graphing folder runs everything.
-
-Fresh pages from big books: `sample_eval.py pick --seed N --count 10` picks pages at
-random (the same seed always picks the same pages) from the PDFs in `graphing\training data`
-(five OpenStax textbooks, not in git), and `sample_eval.py run samples\seed-N.json` reads
-just those pages with the app's reader and reports time and review notes. Never run whole
-books: they are thousands of pages. In these books every formula is drawn as shapes, so
-the checker can check only their words; such pages say so on their heading, and their
-equations need listening to (or hand-checked answers for tests). The reading model was
-probably trained on OpenStax, so results there may be better than on unseen material. The desktop test
-(`node notebook\test_desktop.mjs`) opens the app hidden and closes it without asking to
-save; with IMPORT=1 it also converts the Chain Rule homework with the model.
 
 ## Third-party files
 

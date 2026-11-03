@@ -5,6 +5,11 @@ Included in this repository:
   Copyright (c) 2020 Ron Kok. See notebook/web/vendor/TEMML-LICENSE.txt.
 - Latin Modern Math font (notebook/web/vendor/latinmodernmath.woff2): GUST Font License.
   https://www.gust.org.pl/projects/e-foundry/latin-modern
+- recognition-lab/demo-images/openstax-*.jpg: graphs from OpenStax College Algebra and
+  Precalculus (Rice University), CC BY 4.0, "Access for free at https://openstax.org". Exact
+  sources are in recognition-lab/demo-images/SOURCES.md. The other demo images were made for
+  this project.
+- recognition-lab/THIRD-PARTY-NOTICES.txt lists Recognition Lab's own components in detail.
 
 Installed separately (not included here; each keeps its own licence):
 - Electron (npm install): MIT. https://github.com/electron/electron
@@ -16,4 +21,4 @@ Installed separately (not included here; each keeps its own licence):
 - Pillow: MIT-CMU. https://python-pillow.org/
 - ONNX Runtime: MIT. https://github.com/microsoft/onnxruntime
 - The optional AI add-on uses llama.cpp (MIT) and a vision model downloaded by the user under
-  that model's own licence.
+  that model's own licence. The optional layout model (Docling Heron-101) is Apache-2.0.

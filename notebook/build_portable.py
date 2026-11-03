@@ -124,6 +124,9 @@ def build():
     (APP / 'notebook').mkdir()
     for name in NOTEBOOK_FILES:
         shutil.copy2(NOTEBOOK / name, APP / 'notebook' / name)
+    # The guide without its notes for developers (the tests are not in the build).
+    guide = APP / 'notebook' / 'README.md'
+    guide.write_text(re.sub(r'\n?', '', guide.read_text(encoding='utf-8'), flags=re.S), encoding='utf-8')
     copy_tree(NOTEBOOK / 'web', APP / 'notebook' / 'web')
     copy_tree(NOTEBOOK / 'desktop', APP / 'notebook' / 'desktop')
     (APP / 'notebook' / 'PORTABLE').write_text('This copy runs without AI. See "Read me first.txt".\n', encoding='utf-8')
@@ -141,12 +144,34 @@ def check():
     py = APP / 'python' / 'python.exe'
     code = ('import sys, notebook_core, settings, attachments, pdf_inspector, vector_graph, cv2, numpy, pdfplumber, pypdfium2; '
             'print(sys.version.split()[0], "AI" if settings.AI else "no AI", sys.prefix)')
-    env = {'SYSTEMROOT': __import__('os').environ['SYSTEMROOT'], 'MATH_NOTEBOOK_NO_AI': '1', 'MATH_NOTEBOOK_DATA': str(DIST / 'check-data')}
+    # No compiled cache files from this run: they would carry this computer's folder names.
+    env = {'SYSTEMROOT': __import__('os').environ['SYSTEMROOT'], 'MATH_NOTEBOOK_NO_AI': '1', 'MATH_NOTEBOOK_DATA': str(DIST / 'check-data'),
+           'PYTHONDONTWRITEBYTECODE': '1'}
     result = subprocess.run([str(py), '-c', code], cwd=APP / 'notebook', env=env, capture_output=True, text=True, timeout=120)
     shutil.rmtree(DIST / 'check-data', ignore_errors=True)
     if result.returncode:
         raise SystemExit(f'The portable Python cannot load the reader:\n{result.stderr}')
     return result.stdout.strip()
+
+
+def private_check():
+    """The build is shared: no cache folders, and no file may name this computer's user folder."""
+    for cache in list(APP.rglob('__pycache__')):
+        shutil.rmtree(cache, ignore_errors=True)
+    # pip's command-line launchers (pdf2txt.py, f2py.exe ...) name the build's Python inside
+    # them; the app never runs them.
+    shutil.rmtree(APP / 'python' / 'Scripts', ignore_errors=True)
+    home = str(Path.home())
+    needles = {home.encode(), home.replace('\\', '/').encode(), home.encode('utf-16-le'), Path.home().name.encode() + b'\\Desktop'}
+    found = []
+    for f in OUT.rglob('*'):
+        if f.is_file() and f.stat().st_size < 20 * 2**20:
+            data = f.read_bytes()
+            if any(n in data for n in needles):
+                found.append(str(f.relative_to(OUT)))
+    if found:
+        raise SystemExit('These files name this computer\'s user folder, so the build is not shared:\n' + '\n'.join(found))
+    return 'no user folder names, no cache folders'
 
 
 def size(path):
@@ -157,6 +182,7 @@ if __name__ == '__main__':
     copied = build()
     print('Libraries:', ', '.join(copied))
     print('Check:', check())
+    print('Private:', private_check())
     print(f'Folder: {OUT} ({size(OUT) / 2**20:.0f} MB)')
     if '--no-zip' not in sys.argv:
         archive = DIST / 'Math Notebook (portable).zip'

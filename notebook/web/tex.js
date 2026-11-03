@@ -3,7 +3,7 @@
 // Blocks are the same as docx.js uses, plus { type: 'graph', graph } and { type: 'note', text }.
 import { latexToMathml } from './mathml.js';
 import { latexToPlain, parsePlain, plainToLatex } from './equation.js';
-import { makeGraph, compileFunction } from './graphs.js';
+import { makeGraph, compileFunction, studentGraph } from './graphs.js';
 
 // ---------- reading groups ----------
 
@@ -88,7 +88,8 @@ const TEXT_SYMBOLS = { ldots: '…', dots: '…', LaTeX: 'LaTeX', TeX: 'TeX', te
   textendash: '–', textemdash: '—', quad: ' ', qquad: ' ', ' ': ' ', ',': ' ', ';': ' ', '!': '' };
 const IGNORED = new Set(['noindent', 'centering', 'raggedright', 'raggedleft', 'medskip', 'bigskip', 'smallskip', 'hfill', 'vfill',
   'maketitle', 'tableofcontents', 'normalsize', 'small', 'footnotesize', 'large', 'Large', 'LARGE', 'huge', 'Huge', 'bfseries',
-  'itshape', 'rmfamily', 'sffamily', 'ttfamily', 'indent', 'linebreak', 'nolinebreak', 'protect', 'relax', 'displaystyle', 'item']);
+  'itshape', 'rmfamily', 'sffamily', 'ttfamily', 'indent', 'linebreak', 'nolinebreak', 'protect', 'relax', 'displaystyle', 'item',
+  'normalfont', 'linewidth', 'textwidth', 'scshape', 'upshape', 'mdseries']);
 const DROP_WITH_ARG = new Set(['label', 'vspace', 'hspace', 'vspace*', 'hspace*', 'setlength', 'pagestyle', 'thispagestyle', 'addtolength',
   'setcounter', 'addcontentsline', 'phantom', 'index', 'hypersetup', 'usepackage', 'documentclass', 'geometry', 'graphicspath']);
 const STYLE = { textbf: 'bold', textit: 'italic', emph: 'italic', textsl: 'italic', underline: 'underline', uline: 'underline' };
@@ -113,6 +114,9 @@ function inlineRuns(src, style, ctx) {
     if (ch === '$' && src[i + 1] !== '$') {
       const end = src.indexOf('$', i + 1);
       if (end < 0) { text(src.slice(i)); break; }
+      // A lone dot or bullet in a word (R$\cdot$I$\cdot$T) is punctuation, not maths.
+      const lone = { '\\cdot': '·', '\\bullet': '•', '\\cdots': '⋯' }[src.slice(i + 1, end).trim()];
+      if (lone) { text(lone); i = end + 1; continue; }
       runs.push({ latex: mathOk(src.slice(i + 1, end).trim(), ctx.notes) });
       i = end + 1;
       continue;
@@ -130,7 +134,9 @@ function inlineRuns(src, style, ctx) {
       i += m[0].length;
       if (name === '\\' || name === 'newline') { if (src[i] === '*') i += 1; const opt = optional(src, i); if (opt) i = opt[1]; runs.push({ lineBreak: true }); continue; }
       if (STYLE[name]) { const g = group(src, i); if (g) { runs.push(...inlineRuns(g[0], { ...style, [STYLE[name]]: true }, ctx)); i = g[1]; } continue; }
-      if (name === 'textrm' || name === 'texttt' || name === 'textsf' || name === 'mbox' || name === 'text' || name === 'textnormal' || name === 'textup') {
+      // A drawn line (\rule{\linewidth}{2pt}) is decoration, not text.
+      if (name === 'rule') { const opt = optional(src, i); if (opt) i = opt[1]; for (let k = 0; k < 2; k += 1) { const g = group(src, i); if (g) i = g[1]; } continue; }
+      if (name === 'textsc' || name === 'textrm' || name === 'texttt' || name === 'textsf' || name === 'mbox' || name === 'text' || name === 'textnormal' || name === 'textup') {
         const g = group(src, i); if (g) { runs.push(...inlineRuns(g[0], style, ctx)); i = g[1]; } continue;
       }
       if (name === 'href') { const url = group(src, i); const label = url && group(src, url[1]); if (label) { runs.push(...inlineRuns(label[0], style, ctx)); i = label[1]; } continue; }
@@ -160,7 +166,17 @@ function inlineRuns(src, style, ctx) {
   if (runs[0]?.text !== undefined) runs[0].text = runs[0].text.replace(/^\s+/, '');
   const last = runs.at(-1);
   if (last?.text !== undefined) last.text = last.text.replace(/\s+$/, '');
-  return runs.filter((r) => r.text !== '' || r.latex !== undefined || r.lineBreak);
+  // No empty lines: a break at the start or end, or a break after a break (left where a
+  // drawn line or a space was), is dropped.
+  const trimmed = runs.map((r, n) => (r.text !== undefined && (runs[n - 1]?.lineBreak || runs[n + 1]?.lineBreak) ? { ...r, text: r.text.trim() } : r))
+    .filter((r) => r.text !== '' || r.latex !== undefined || r.lineBreak);
+  const out = [];
+  for (const r of trimmed) {
+    if (r.lineBreak && (!out.length || out.at(-1).lineBreak)) continue;
+    out.push(r);
+  }
+  while (out.at(-1)?.lineBreak) out.pop();
+  return out;
 }
 
 // ---------- blocks ----------
@@ -213,6 +229,9 @@ function readBlocks(src, ctx, listLevel = 0) {
     // A blank line ends a paragraph.
     const blank = /^\n[ \t]*\n/.exec(src.slice(i));
     if (blank) { flush(); i += blank[0].length; continue; }
+    // A line break, even one with extra space after it (\\[0.1cm]), is not display maths:
+    // the paragraph's reader turns it into a line break.
+    if (src.startsWith('\\\\', i)) { para += '\\\\'; i += 2; continue; }
     if (src.startsWith('$$', i) || src.startsWith('\\[', i)) {
       const close = src.startsWith('$$', i) ? '$$' : '\\]';
       const end = src.indexOf(close, i + 2);
@@ -334,7 +353,9 @@ function tableBlock(body, ctx) {
 // pgfplots maths -> plain text the graphs understand. pgfplots measures sin, cos and tan
 // in degrees: sin(deg(x)) is the sine of x radians, sin(x) the sine of x degrees.
 export function pgfToPlain(expr) {
-  let s = expr.replace(/\\x\b/g, 'x').replace(/\s+/g, ' ').trim();
+  // (\x) is how TikZ files keep a negative x safe; written out it is just x.
+  // (Not deg(\x) or sqrt(\x): there the brackets belong to the function.)
+  let s = expr.replace(/(^|[^A-Za-z])\(\s*\\x\s*\)/g, '$1x').replace(/\\x\b/g, 'x').replace(/\s+/g, ' ').trim();
   let out = '';
   for (let i = 0; i < s.length;) {
     const m = /^(sin|cos|tan|sec|cosec|csc|cot)\s*\(/.exec(s.slice(i));
@@ -342,7 +363,8 @@ export function pgfToPlain(expr) {
     let depth = 0, j = i + m[0].length - 1;
     for (; j < s.length; j += 1) { if (s[j] === '(') depth += 1; else if (s[j] === ')') { depth -= 1; if (depth === 0) break; } }
     const arg = s.slice(i + m[0].length, j);
-    const deg = /^\s*deg\s*\((.*)\)\s*$/.exec(arg);
+    // Radians: sin(deg(x)) in pgfplots, or TikZ's own sin(\x r) (r after the angle).
+    const deg = /^\s*deg\s*\((.*)\)\s*$/.exec(arg) || /^(.*\S)\s+r\s*$/.exec(arg);
     const name = m[1] === 'cosec' ? 'csc' : m[1];
     out += deg ? `${name}(${pgfToPlain(deg[1])})` : `${name}((${pgfToPlain(arg)})*pi/180)`;
     i = j + 1;
@@ -418,9 +440,206 @@ function latexOfPlain(plain) {
   return plainToLatex(plain);
 }
 
+// ---------- TikZ drawings of functions ----------
+
+// A number as TikZ writes one: 2, -0.5, .5, pi, -pi, 2*pi, pi/2 (the last few are rare in points).
+const NUM = '(-?\\d*\\.?\\d+)';
+const POINT = `\\(\\s*${NUM}\\s*,\\s*${NUM}\\s*\\)`;
+const tikzNumber = (v) => {
+  const s = String(v ?? '').replace(/[{}\s]/g, '');
+  if (!s) return null;
+  const n = Number(s);
+  if (Number.isFinite(n)) return n;
+  // pi, -pi, 2*pi, pi/2, 3.14: a short product or quotient of a number and pi.
+  const m = /^(-?)(\d*\.?\d*)\*?(pi)?(?:\/(\d*\.?\d+))?$/.exec(s);
+  if (!m || (!m[2] && !m[3])) return null;
+  return (m[1] ? -1 : 1) * (m[2] ? Number(m[2]) : 1) * (m[3] ? Math.PI : 1) / (m[4] ? Number(m[4]) : 1);
+};
+// A drawn end close to a whole number is that number: plots stop a little short of a dot
+// (domain=0.03:0.99 is drawn up to the dots at 0 and 1).
+const snap = (v) => (Math.abs(v - Math.round(v)) <= 0.06 ? Math.round(v) : v);
+const close = (a, b) => Math.abs(a - b) <= 1e-6 * (1 + Math.abs(a));
+const fmt = (v) => String(Number(v.toPrecision(12)));
+const spoken = (v) => String(Number(v.toPrecision(6))).replace('-', 'minus ');
+
+// Everything a \draw / \filldraw / \fill / \path command says, up to its ;
+function drawCommands(body) {
+  const out = [];
+  const re = /\\(draw|filldraw|fill|path|node)\b/g;
+  for (let m = re.exec(body); m; m = re.exec(body)) {
+    let i = m.index + m[0].length, depth = 0;
+    for (; i < body.length; i += 1) {
+      if (body[i] === '{') depth += 1;
+      else if (body[i] === '}') depth -= 1;
+      else if (body[i] === ';' && depth <= 0) break;
+    }
+    const text = body.slice(m.index + m[0].length, i);
+    const opts = /^\s*\[([^\]]*)\]/.exec(text);
+    out.push({ command: m[1], opts: opts ? opts[1] : '', rest: opts ? text.slice(opts[0].length) : text });
+    re.lastIndex = i + 1;
+  }
+  return out;
+}
+
+// A TikZ picture that draws a function becomes a real graph:
+// - \draw plot (\x, {formula}) (or ({\x}, {...}), any variable, domain on the draw or the plot):
+//   each plot is a piece of the function; one formula drawn in parts around a gap is one piece;
+// - \draw (-2,1) -- (0,3) -- (2,1) and \draw plot coordinates {...}: a graph of straight pieces;
+// - the solid lines along y = 0 and x = 0 are the axes and give the window (or a \clip);
+//   dashed and grid lines are left out;
+// - dots: \node at (x,y) {$\circ$} (open) or {\textbullet}, {$\bullet$} (solid), a circle node
+//   (filled or white), \fill (x,y) circle (solid) and \draw[fill=white] (x,y) circle (open).
+// Returns null when the picture draws no function.
+function tikzPlotGraph(body, ctx) {
+  const plots = [], polylines = [], dots = [];
+  let x = null, y = null, clip = null;
+  for (const d of drawCommands(body)) {
+    const dashed = /dash|dot|help lines|gr[ae]y|very thin/.test(d.opts);
+    // A plot of a formula.
+    const plot = /plot\s*(\[([^\]]*)\])?\s*\(\s*\{?\s*\\([A-Za-z]+)\s*\}?\s*,/.exec(d.rest);
+    if (plot && d.command !== 'node') {
+      const g = group(d.rest, plot.index + plot[0].length);
+      if (!g) continue;
+      const opts = { ...keyValues(d.opts), ...keyValues(plot[2] || '') };
+      const variable = (opts.variable || '\\x').replace(/^\\/, '');
+      if (variable !== plot[3]) { ctx.notes.push('A TikZ plot of a curve given by two formulas (parametric) was not read.'); continue; }
+      const domain = (opts.domain || '-5:5').split(':').map(tikzNumber);
+      if (domain.length !== 2 || domain.some((v) => v === null)) continue;
+      const expr = g[0].replace(new RegExp(`\\\\${variable}\\b`, 'g'), '\\x');
+      const label = /^\s*\)\s*node\s*(\[[^\]]*\])?\s*\{\s*\$([^$]*)\$\s*\}/.exec(d.rest.slice(g[1]));
+      plots.push({ expr, lo: Math.min(...domain), hi: Math.max(...domain), left: /<-|latex-|stealth-/.test(d.opts), right: /->|-latex|-stealth/.test(d.opts), label: label ? label[2] : null });
+      continue;
+    }
+    // Points listed with plot coordinates {(0,0) (1,1)}.
+    const coords = /plot\s*(\[[^\]]*\])?\s*coordinates\s*\{([^}]*)\}/.exec(d.rest);
+    if (coords) { polylines.push([...coords[2].matchAll(new RegExp(POINT, 'g'))].map((p) => [Number(p[1]), Number(p[2])])); continue; }
+    // plot ({cos(\x r)}, {sin(\x r)}): x is a formula too, so this is not a function of x.
+    if (/plot\s*(\[[^\]]*\])?\s*\(\s*\{/.test(d.rest) && d.command !== 'node') { ctx.notes.push('A TikZ plot of a curve given by two formulas (parametric) was not read.'); continue; }
+    if (/^\s*\(/.test(d.rest) && /\bclip\b/.test(d.opts + d.command)) { /* \path[clip] */ }
+    // A straight path (a) -- (b) -- (c).
+    const line = new RegExp(`^\\s*${POINT}((?:\\s*--\\s*${POINT})+)`).exec(d.rest);
+    if (line && d.command !== 'node') {
+      const pts = [...d.rest.slice(0, line[0].length).matchAll(new RegExp(POINT, 'g'))].map((p) => [Number(p[1]), Number(p[2])]);
+      if (dashed) continue;
+      const horizontal = pts.every((p) => p[1] === 0), vertical = pts.every((p) => p[0] === 0);
+      if (pts.length === 2 && horizontal) { x = [Math.min(pts[0][0], pts[1][0]), Math.max(pts[0][0], pts[1][0])]; continue; }
+      if (pts.length === 2 && vertical) { y = [Math.min(pts[0][1], pts[1][1]), Math.max(pts[0][1], pts[1][1])]; continue; }
+      // A graph goes left to right; anything that turns back (a box, an arrow) is a drawing.
+      const xs = pts.map((p) => p[0]);
+      if (xs.every((v, k) => k === 0 || v > xs[k - 1]) || xs.every((v, k) => k === 0 || v < xs[k - 1])) polylines.push(pts);
+      continue;
+    }
+    // Dots.
+    const at = new RegExp(`at\\s*${POINT}\\s*\\{([^}]*)\\}`).exec(d.rest) || new RegExp(`^\\s*${POINT}\\s*node\\s*(?:\\[[^\\]]*\\])?\\s*\\{([^}]*)\\}`).exec(d.rest);
+    if (at && (d.command === 'node' || /node/.test(d.rest))) {
+      const content = at[3];
+      const circle = /circle/.test(d.opts) && !content.trim();
+      const kind = /\\circ\b|\\ocircle/.test(content) ? 'open dot' : /bullet/.test(content) ? 'solid dot'
+        : circle ? (/fill\s*=\s*white/.test(d.opts) || !/fill/.test(d.opts) ? 'open dot' : 'solid dot') : null;
+      if (kind) dots.push({ kind, coordinate: [Number(at[1]), Number(at[2])] });
+      continue;
+    }
+    const round = new RegExp(`^\\s*${POINT}\\s*circle`).exec(d.rest);
+    if (round) {
+      const open = /fill\s*=\s*white/.test(d.opts) || (d.command === 'draw' && !/fill/.test(d.opts));
+      dots.push({ kind: open ? 'open dot' : 'solid dot', coordinate: [Number(round[1]), Number(round[2])] });
+      continue;
+    }
+    const rect = new RegExp(`^\\s*${POINT}\\s*rectangle\\s*${POINT}`).exec(d.rest);
+    if (rect && /clip/.test(d.opts + d.command)) clip = rect.slice(1, 5).map(Number);
+  }
+  for (const m of body.matchAll(new RegExp(`\\\\clip\\s*${POINT}\\s*rectangle\\s*${POINT}`, 'g'))) clip = m.slice(1, 5).map(Number);
+  if (clip) {
+    x ||= [Math.min(clip[0], clip[2]), Math.max(clip[0], clip[2])];
+    y ||= [Math.min(clip[1], clip[3]), Math.max(clip[1], clip[3])];
+  }
+  if (!plots.length && !polylines.length) return null;
+  // Straight lines alone are a graph only with axes: a box and an arrow are a drawing.
+  if (!plots.length && !x && !y) return null;
+  try {
+    const graph = plots.length ? formulaGraph(plots, dots, x, y) : { summary: '', span: null, curves: [], points: [] };
+    // Straight pieces drawn point to point: exact corners, as drawn.
+    // Pieces side by side (one ends where or before the next starts) are one function with a
+    // break between them; pieces that overlap in x are separate lines.
+    const sortedLines = polylines.map((pts) => [...pts].sort((a, b) => a[0] - b[0])).sort((a, b) => a[0][0] - b[0][0]);
+    const sideBySide = sortedLines.every((pts, k) => k === 0 || pts[0][0] >= sortedLines[k - 1].at(-1)[0] - 1e-9);
+    if (sideBySide && sortedLines.length > 1) graph.curves.push({ kind: 'line', label: 'the graph', color: '', corners: sortedLines.flatMap((pts, k) => (k ? [null, ...pts] : pts)) });
+    else for (const pts of sortedLines) graph.curves.push({ kind: 'line', label: sortedLines.length > 1 ? 'a line' : 'the graph', color: '', corners: pts });
+    if (!plots.length) {
+      const all = polylines.flat();
+      const pad = (lo, hi) => [Math.floor(lo - 1), Math.ceil(hi + 1)];
+      graph.span = { x: x || pad(Math.min(...all.map((p) => p[0])), Math.max(...all.map((p) => p[0]))), y: y || pad(Math.min(0, ...all.map((p) => p[1])), Math.max(0, ...all.map((p) => p[1]))) };
+      graph.points = dots;
+      const pt = (p) => `${spoken(p[0])}, ${spoken(p[1])}`;
+      graph.summary = `${polylines.map((pts) => `Straight pieces through ${[...pts].sort((a, b) => a[0] - b[0]).map(pt).join('; then ')}`).join('. ')}.`
+        + `${dots.length ? ` Dots: ${dots.map((d) => `${d.kind} at ${pt(d.coordinate)}`).join('; ')}.` : ''}`
+        + ` Shown for x from ${spoken(graph.span.x[0])} to ${spoken(graph.span.x[1])} and y from ${spoken(graph.span.y[0])} to ${spoken(graph.span.y[1])}.`;
+    } else if (polylines.length) {
+      graph.summary += ` Also straight pieces through ${polylines.map((pts) => pts.map((p) => `${spoken(p[0])}, ${spoken(p[1])}`).join('; then ')).join('. And ')}.`;
+    }
+    return graph;
+  } catch (error) {
+    ctx.notes.push(`A function drawn with TikZ could not be read: ${plots.map((p) => p.expr).join('; ')} (${error.message})`);
+    return null;
+  }
+}
+
+// Plots of formulas, with their dots, as one function. The formula is not kept: the printed
+// page shows only the drawing, so the graph holds the curve, its points and dots (as a student
+// copy whose formula is hidden).
+function formulaGraph(plots, dots, x, y) {
+  let pieces = plots.map((p) => {
+    const plain = pgfToPlain(p.expr);
+    const fn = compileFunction(plain, 'plain').graph;
+    return { ...p, plain, latex: latexOfPlain(plain), fn, lo: p.left ? -Infinity : snap(p.lo), hi: p.right ? Infinity : snap(p.hi) };
+  }).sort((a, b) => a.lo - b.lo);
+  // One formula drawn in parts (left and right of an asymptote, 1/(x-1) on -3:0.9 and 1.1:3)
+  // is one function: its own maths says what happens in the gap.
+  if (pieces.length > 1 && pieces.every((p) => p.plain === pieces[0].plain)) {
+    pieces = [{ ...pieces[0], lo: pieces[0].lo, hi: Math.max(...pieces.map((p) => p.hi)), right: pieces.some((p) => p.right) }];
+  }
+  // Each end belongs to its piece when a solid dot sits there (or nothing marks it open and
+  // no earlier piece already has that x); an open dot leaves it out.
+  const ownsEnd = (p, b, earlier) => {
+    const v = p.fn.limitAt(b);
+    const at = (kind) => dots.some((d) => d.kind === kind && close(d.coordinate[0], b) && (v.defined || v.hole) && Math.abs(d.coordinate[1] - v.y) < 0.05 * (1 + Math.abs(v.y)));
+    if (at('open dot')) return false;
+    if (at('solid dot')) return true;
+    return !earlier;
+  };
+  const rows = pieces.map((p, n) => {
+    const before = pieces.slice(0, n).some((q) => close(q.hi, p.lo) && ownsEnd(q, p.lo, false));
+    const lo = Number.isFinite(p.lo) ? `${fmt(p.lo)} ${ownsEnd(p, p.lo, before) ? '\\le' : '<'} ` : '';
+    const hi = Number.isFinite(p.hi) ? ` ${ownsEnd(p, p.hi, false) ? '\\le' : '<'} ${fmt(p.hi)}` : '';
+    return lo || hi ? `${p.latex} & ${lo}x${hi}` : null;
+  });
+  const name = plots.map((p) => p.label).find((l) => l && /f\s*\(\s*x\s*\)/.test(l)) ? 'f(x)' : 'y';
+  const latex = rows.every((r) => r === null) && pieces.length === 1 ? `${name} = ${pieces[0].latex}`
+    : `${name} = \\begin{cases} ${pieces.map((p, n) => rows[n] ?? `${p.latex} & \\text{otherwise}`).join(' \\\\ ')} \\end{cases}`;
+  const full = makeGraph([{ text: latex, format: 'latex' }], { x, y });
+  // Where the drawing simply stops (a domain end with nothing drawn there) there is no dot:
+  // the curve's start or end is said instead. Dots stay where they are drawn, and where two
+  // pieces meet (a jump).
+  const shared = (b) => pieces.some((p) => close(p.hi, b)) && pieces.some((p) => close(p.lo, b));
+  const drawn = (pt) => dots.some((d) => d.kind === pt.kind && close(d.coordinate[0], pt.coordinate[0]) && Math.abs(d.coordinate[1] - pt.coordinate[1]) < 0.05);
+  const dropped = full.points.filter((pt) => !(drawn(pt) || shared(pt.coordinate[0])));
+  full.points = full.points.filter((pt) => !dropped.includes(pt));
+  // Dots drawn in the picture that the pieces' own ends did not already make.
+  const extra = dots.filter((d) => !full.points.some((p) => p.kind === d.kind && close(p.coordinate[0], d.coordinate[0]) && Math.abs(p.coordinate[1] - d.coordinate[1]) < 0.05));
+  full.points.push(...extra.map((d) => ({ ...d, function: 0, label: `${d.kind} at ${d.coordinate.join(', ')}` })));
+  const graph = studentGraph({ ...full, student: { hideFormula: true, hide: [], note: 'Drawn on the page; its formula is not shown, as on paper.' } });
+  for (const pt of dropped) graph.summary = graph.summary.replace(`; ${pt.label}`, '').replace(`: ${pt.label}; `, ': ');
+  if (extra.length) graph.summary += ` Also drawn: ${extra.map((d) => `${d.kind} at ${d.coordinate.join(', ')}`).join('; ')}.`;
+  return graph;
+}
+
 function tikzBlocks(body, ctx) {
   const axes = [...body.matchAll(/\\begin\{(axis|semilogyaxis|semilogxaxis|loglogaxis)\}/g)];
-  if (!axes.length) return [{ type: 'note', text: 'A TikZ drawing (not a pgfplots graph), so it was not read.' }];
+  if (!axes.length) {
+    const graph = tikzPlotGraph(body, ctx);
+    if (graph) return [{ type: 'graph', graph }];
+    return [{ type: 'note', text: 'A TikZ drawing (not a pgfplots graph), so it was not read.' }];
+  }
   const out = [];
   for (const a of axes) {
     const start = a.index + a[0].length;
@@ -522,5 +741,5 @@ export function texToBlocks(source) {
   blocks.push(...readBlocks(body, ctx));
   for (const b of blocks) if (b.type === 'heading') b.level = Math.min(b.level, 6);
   if (ctx.unknown.size) notes.push(`These commands are not known to the notebook, so only their text was kept: ${[...ctx.unknown].map((n) => `\\${n}`).join(', ')}.`);
-  return { title: title ? inlineRuns(title, {}, ctx).map((r) => r.text ?? '').join('') : null, blocks, notes };
+  return { title: title ? inlineRuns(expandMacros(title, macros), {}, ctx).map((r) => r.text ?? (r.lineBreak ? ' ' : '')).join('').replace(/\s+/g, ' ').trim() : null, blocks, notes };
 }
