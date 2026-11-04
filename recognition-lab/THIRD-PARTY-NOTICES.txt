@@ -30,5 +30,4 @@ Docling Heron-101 model: Apache-2.0. Publisher model card and provenance are kep
 in models/layout-heron-101/. https://huggingface.co/docling-project/docling-layout-heron-101
 Model research: Livathinos et al., Advanced Layout Analysis Models for Docling,
 https://arxiv.org/abs/2509.11720
-This integration uses model APIs and retains the original model; no Curious Mind
-code or data is incorporated.
+This integration uses model APIs and retains the original model.

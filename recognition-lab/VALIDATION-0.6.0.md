@@ -9,7 +9,7 @@ October 26, 2026. The PDF import workflow is improved; the graph-reading model h
 - Completed pages are saved atomically. Cancel, server restart and Resume preserve their graph IDs and page text. An incomplete page is replayed instead of publishing half its results.
 - Recent PDFs persists across app shutdown. A single graph list spans the document; Previous/Next crosses page boundaries. The first useful result opens once without stealing focus. Save descriptions produces portable readable HTML; technical JSON remains optional.
 - Permanent missing/session errors stop polling. Source data is escaped in HTML. File locks prevent two app instances or resumed workers from writing the same library/import concurrently.
-- The current Qwen model, quantization and inference defaults remain installed. No additional model weights were downloaded and no Curious Mind code was imported.
+- The current Qwen model, quantization and inference defaults remain installed. No additional model weights were downloaded.
 
 ## Tests actually performed
 

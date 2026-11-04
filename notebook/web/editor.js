@@ -2034,6 +2034,9 @@ $('settings-form').addEventListener('submit', (e) => {
   if (e.submitter?.value === 'save') { e.preventDefault(); saveSettings(); }
 });
 $('settings-defaults').addEventListener('click', () => resetSettings(true));
+// Hearing a sound before choosing it: a few notes as you move through the list, a whole example with Listen.
+$('set-sound_profile').addEventListener('change', () => graphMode.preview(settingsFromForm(), true));
+$('sound-listen').addEventListener('click', () => say(graphMode.preview(settingsFromForm())));
 $('settings-dialog').addEventListener('close', () => { (settingsReturn && document.contains(settingsReturn) ? settingsReturn : doc).focus(); });
 
 // ---------- keys inside the document ----------

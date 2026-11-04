@@ -6,6 +6,10 @@
 // 3. Multiple selectable Sound Profiles and Background Bass Modes in Settings.
 // 4. Master DynamicsCompressor limiter + voice stealing so rapid stepping never clips or muddies.
 
+import { playVoice, VOICES } from './voices.js';
+
+export const CLASSIC_PROFILES = ['gentle', 'warm-acoustic', 'soft-synth', 'crisp-piano', 'high-contrast', 'progress'];
+
 export class CalculusSoundEngine {
   constructor() {
     this.ctx = null;
@@ -16,7 +20,7 @@ export class CalculusSoundEngine {
     this.volume = 0.25;
     this.bassOutlineVolume = 0.35; // Relative level of the continuous dark bass outline
     this.bassOutlineMode = 'x-and-y'; // 'x-and-y' | 'x-only' | 'y-only' | 'off'
-    // 'gentle' is the default since the owner's ear test (29 Oct 2026): no sharp attacks.
+    // 'gentle' is the default since an ear test (29 Oct 2026): no sharp attacks.
     this.soundProfile = 'gentle'; // 'gentle' | 'warm-acoustic' | 'soft-synth' | 'crisp-piano' | 'high-contrast'
     this.cuesEnabled = true;
     this.stepDurationSeconds = 0.4;
@@ -38,6 +42,23 @@ export class CalculusSoundEngine {
     // Dot and corner sounds: 'new' (bump for a solid dot, wind for an open dot, a slide through
     // a corner) or 'original' (the held tone and the air breath from before).
     this.dotSounds = 'new';
+
+    // Clearer pitch: each step's note starts at the last step's pitch and slides to its own, so
+    // going up is a short rise and going down a short fall, and the notes are a little further
+    // apart. Off is exactly the original sound.
+    this.pitchGlide = true;
+    this.lastProgressFreq = null;
+  }
+
+  setPitchGlide(on) {
+    this.pitchGlide = Boolean(on);
+  }
+
+  // The pitch to slide from: the last step's, when the height changed.
+  slideFrom(prevY, y, freqOf) {
+    if (!this.pitchGlide || !Number.isFinite(prevY) || !Number.isFinite(y) || prevY === y) return null;
+    const f = freqOf(prevY);
+    return f > 0 ? f : null;
   }
 
   setDotSounds(mode) {
@@ -55,12 +76,18 @@ export class CalculusSoundEngine {
   // 100. No jump at zero and no wrap: the same height is always the same pitch on this graph.
   // Above zero the beep is clear; below zero it is softer and rounder. At y = 0 a quiet octave
   // rings with it, so zero is recognisable as home.
-  playProgressBeep(x, y, boundary) {
+  progressFrequency(y) {
+    const [y0, y1] = this.yRange;
+    const t = Math.max(0, Math.min(1, (y - y0) / (y1 - y0)));
+    return 220 * Math.pow(2, t * 2);
+  }
+
+  playProgressBeep(x, y, boundary, prevY = null) {
     const ctx = this.ensureContext();
     const now = ctx.currentTime;
     const [y0, y1] = this.yRange;
-    const t = Math.max(0, Math.min(1, (y - y0) / (y1 - y0)));
-    const freq = 220 * Math.pow(2, t * 2);
+    const freq = this.progressFrequency(y);
+    const from = this.slideFrom(prevY, y, (v) => this.progressFrequency(v));
     if (this.lastStepGain) {
       try { this.lastStepGain.gain.setTargetAtTime(0.0005, now, 0.02); } catch {}
     }
@@ -74,7 +101,8 @@ export class CalculusSoundEngine {
     const gain = ctx.createGain();
     this.lastStepGain = gain;
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(freq, now);
+    osc.frequency.setValueAtTime(from || freq, now);
+    if (from) osc.frequency.exponentialRampToValueAtTime(freq, now + 0.05);
     filter.type = 'lowpass';
     filter.frequency.setValueAtTime(below ? freq * 1.3 : freq * 5, now);
     const peak = this.volume * 0.8 * Math.pow(330 / freq, 0.3) * (below ? 0.8 : 1);
@@ -159,7 +187,7 @@ export class CalculusSoundEngine {
   }
 
   setSoundProfile(profile) {
-    if (['gentle', 'warm-acoustic', 'soft-synth', 'crisp-piano', 'high-contrast', 'progress'].includes(profile)) {
+    if (CLASSIC_PROFILES.includes(profile) || VOICES.includes(profile)) {
       this.soundProfile = profile;
     }
   }
@@ -338,19 +366,20 @@ export class CalculusSoundEngine {
     const stepInGear = Number((quantizedAbs - gear * 10).toPrecision(4));
 
     if (y > 0) {
-      const semitonesUp = stepInGear * 1.5;
+      // Clearer pitch spreads the notes a little (2 semitones a unit); off, the original 1.5.
+      const semitonesUp = stepInGear * (this.pitchGlide ? 2 : 1.5);
       const frequency = Math.min(1600, 440.0 * Math.pow(2, semitonesUp / 12));
       return { region: 'tin', frequency, gear, stepInGear };
     }
 
-    const semitonesDown = stepInGear * 1.3;
+    const semitonesDown = stepInGear * (this.pitchGlide ? 1.6 : 1.3);
     const frequency = Math.max(85, 220.0 * Math.pow(2, -semitonesDown / 12));
     return { region: 'bass', frequency, gear, stepInGear };
   }
 
   // Plays the foreground step pulse according to the user's selected Sound Profile
   playSeatedPulse(x, y, boundary = 5, prevY = null) {
-    if (this.soundProfile === 'progress' && this.yRange && Number.isFinite(y)) return this.playProgressBeep(x, y, boundary);
+    if (this.soundProfile === 'progress' && this.yRange && Number.isFinite(y)) return this.playProgressBeep(x, y, boundary, prevY);
     const ctx = this.ensureContext();
     const pan = this.computePan(x, boundary);
     const level = this.computeQuantizedLevel(y);
@@ -385,6 +414,17 @@ export class CalculusSoundEngine {
       }
     }
 
+    const from = this.slideFrom(prevY, y, (v) => this.computeQuantizedLevel(v).frequency);
+
+    // Instruments, beeps and game sounds (voices.js), at the same pitch for the same height.
+    if (VOICES.includes(this.soundProfile)) {
+      const voiceGain = ctx.createGain();
+      voiceGain.connect(panner);
+      this.lastStepGain = voiceGain;
+      playVoice(ctx, voiceGain, this.soundProfile, { freq: level.frequency, fromFreq: from, when: now, length: this.stepDurationSeconds, volume: this.volume });
+      return level;
+    }
+
     // Configure waveform & filter according to selected Sound Profile
     const profile = this.soundProfile;
     const oscMain = ctx.createOscillator();
@@ -395,13 +435,20 @@ export class CalculusSoundEngine {
     this.lastStepGain = gain;
 
     const freq = level.frequency;
-    oscMain.frequency.setValueAtTime(freq, now);
+    oscMain.frequency.setValueAtTime(from || freq, now);
+    const glideTime = Math.min(0.08, noteHold * 0.3);
+    if (from) oscMain.frequency.exponentialRampToValueAtTime(freq, now + glideTime);
+    // The colour tone slides with the main one, keeping its distance.
+    const colorAt = (f) => {
+      oscColor.frequency.setValueAtTime(from ? (from * f) / freq : f, now);
+      if (from) oscColor.frequency.exponentialRampToValueAtTime(f, now + glideTime);
+    };
 
     if (profile === 'gentle') {
       // Pure tone with a quiet octave below, rounded off above 1.1 kHz: nothing sharp.
       oscMain.type = 'sine';
       oscColor.type = 'triangle';
-      oscColor.frequency.setValueAtTime(freq * 0.5, now);
+      colorAt(freq * 0.5);
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(1100, now);
       colorGain.gain.setValueAtTime(this.volume * 0.25, now);
@@ -410,7 +457,7 @@ export class CalculusSoundEngine {
       // Ultra-smooth pure sine + soft octave sine
       oscMain.type = 'sine';
       oscColor.type = 'sine';
-      oscColor.frequency.setValueAtTime(level.region === 'bass' ? freq * 0.5 : freq * 2.0, now);
+      colorAt(level.region === 'bass' ? freq * 0.5 : freq * 2.0);
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(level.region === 'bass' ? 280 : 1800, now);
       colorGain.gain.setValueAtTime(this.volume * 0.2, now);
@@ -419,7 +466,7 @@ export class CalculusSoundEngine {
       // Plucked electric-piano / string definition on each step
       oscMain.type = 'triangle';
       oscColor.type = 'sine';
-      oscColor.frequency.setValueAtTime(freq * 2.0, now);
+      colorAt(freq * 2.0);
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(level.region === 'bass' ? 420 : 2400, now);
       filter.frequency.exponentialRampToValueAtTime(level.region === 'bass' ? 190 : 900, now + noteHold);
@@ -429,7 +476,7 @@ export class CalculusSoundEngine {
       // Maximum distinction between deep sub-bass (Y < 0) and bright metallic chime (Y > 0)
       oscMain.type = level.region === 'bass' ? 'triangle' : 'sawtooth';
       oscColor.type = 'sine';
-      oscColor.frequency.setValueAtTime(level.region === 'bass' ? freq * 0.5 : freq * 2.5, now);
+      colorAt(level.region === 'bass' ? freq * 0.5 : freq * 2.5);
       filter.type = level.region === 'bass' ? 'lowpass' : 'highpass';
       filter.frequency.setValueAtTime(level.region === 'bass' ? 240 : 580, now);
       colorGain.gain.setValueAtTime(this.volume * 0.3, now);
@@ -438,7 +485,7 @@ export class CalculusSoundEngine {
       // Default 'warm-acoustic' (Marimba & Glass Vibraphone)
       oscMain.type = 'sine';
       oscColor.type = 'triangle';
-      oscColor.frequency.setValueAtTime(level.region === 'bass' ? freq * 2.0 : freq * 3.0, now);
+      colorAt(level.region === 'bass' ? freq * 2.0 : freq * 3.0);
       filter.type = level.region === 'bass' ? 'lowpass' : 'highpass';
       filter.frequency.setValueAtTime(level.region === 'bass' ? 290 : 380, now);
       colorGain.gain.setValueAtTime(this.volume * 0.22, now);

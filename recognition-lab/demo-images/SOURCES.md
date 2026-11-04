@@ -8,7 +8,7 @@ This document catalogs every image in `demo-images/` (22 images total: 8 origina
 
 ## 1. Original Prototype Fixtures (8 images)
 
-Generated locally with Pillow/OpenCV for the GTool Recognition Lab prototype. Released under the project license (MIT-compatible internal test fixtures).
+Generated locally with Pillow/OpenCV for the Recognition Lab prototype. Released under the project license (MIT-compatible internal test fixtures).
 
 | Filename | Category | Origin / Source URL | License | Axis Ranges & Step | Ground-Truth Mathematical Content |
 | :--- | :--- | :--- | :--- | :--- | :--- |

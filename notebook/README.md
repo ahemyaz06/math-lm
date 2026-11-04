@@ -187,7 +187,7 @@ everything back. Settings are saved in `%LOCALAPPDATA%\MathNotebook\settings.jso
 - Graph sound (from Sound Lab): sound profile (Gentle by default), the bass line while
   playing (x and height, x only, height only, off), the step, playing speed, sounds for
   points of interest, step volume, bass volume.
-- Moving freely (from GTool's cursor sounds): tones when the arrow keys land on a curve,
+- Moving freely: tones when the arrow keys land on a curve,
   a dot or the origin. With them off, the position is still read.
 
 ## Graph mode

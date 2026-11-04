@@ -1,19 +1,14 @@
 # Calculus Stereo Sound Lab — Origin, Design Rationale, and Purpose
 
 **Date:** 25 October 2026  
-**Location:** `%USERPROFILE%\Desktop\graphing\sound-lab`  
 **Status:** Standalone Calculus Audio Prototype (`v0.2.0`)
 
-> **IMPORTANT PROJECT ROADMAP & REMINDER (DO NOT FORGET):**
-> 1. **Order of Work:** Focus on perfecting **Sound Lab** and **Recognition Lab** first. Leave `GTool` alone for now.
-> 2. **Rewrite `GTool` as a Block-Based Math Editor (Not an Inspector):** When we return to `GTool`, do **not** keep extending it as a 2D coordinate inspector. Rewrite it into a **Block-Based Calculus Math Editor** (an *editor* instead of an *inspector*, where functions, derivatives, tangents, and integrals are structured blocks) powered by the `Sound Lab` audio engine and fed by `Recognition Lab`.
-> 3. **Target Form Factor:** Package the final environment as a **Standalone Application** (not a heavy inside-NVDA add-on, so heavy CV/PDF/audio work never freezes NVDA).
 
 ---
 
 ## 1. How Sound Lab Came About (Summary of Our Design Conversation)
 
-Sound Lab grew out of a critical look at what worked—and what did not work—in our earlier accessible graphing tools (`GTool` and `Recognition Lab`) when applied to real **Calculus** coursework for a totally blind student.
+Sound Lab grew out of a critical look at what worked—and what did not work—in our earlier accessible graphing tools (a graph inspector and `Recognition Lab`) when applied to real **Calculus** coursework for a totally blind student.
 
 ### The Core Problem We Identified with Standard Audio Graphing
 Most accessible graphing tools rely on **continuous smooth pitch sweeps** (mapping $X$ to left/right stereo pan and $Y$ to a sliding oscillator frequency from low to high) combined with screen-reader coordinate announcements on every move. Through real use, several fundamental flaws stood out:

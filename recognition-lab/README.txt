@@ -55,7 +55,7 @@ geometry and raster inspection. Basic skips the layout model. Models stay
 loaded between page batches while parser handles reopen to release caches.
 The existing graph reader and optional local Qwen model are reused. PDF AI
 defaults on when installed and can be disabled in Options. Uploads do not
-download models. No Curious Mind code or new model weights were imported.
+download models. No new model weights were imported.
 
 Accuracy and remaining limitations
 

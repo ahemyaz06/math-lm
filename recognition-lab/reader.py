@@ -1113,7 +1113,7 @@ def save_reconstructed_image(result,out_path):
     canvas=render_reconstructed_image(result)
     return bool(cv2.imwrite(str(out_path),canvas))
 
-def _build_gtool_document(p,sx,sy,paths,points,axis_span=None):
+def _build_graph_document(p,sx,sy,paths,points,axis_span=None):
     if not sx or not sy:return None
     if axis_span:
         boundary=max(1,round(max(abs(axis_span['x'][0]),abs(axis_span['x'][1]),abs(axis_span['y'][0]),abs(axis_span['y'][1]))))
@@ -1151,7 +1151,7 @@ def _build_gtool_document(p,sx,sy,paths,points,axis_span=None):
 
 def read_graph(source,ocr=None,use_vlm=False):
     start=time.perf_counter();ocr=ocr or OCR();base=detect(source,ocr);img,_=load_image(source);p=base['axis_candidate']
-    base['reader_version']='0.7.0';base['reading']={'status':'unreadable','scale':{'x':None,'y':None},'axis_span':None,'paths':[],'marked_points':[],'annotations':[],'verbal_summary':'','gtool_document':None,'vlm':None,'notes':[]}
+    base['reader_version']='0.7.0';base['reading']={'status':'unreadable','scale':{'x':None,'y':None},'axis_span':None,'paths':[],'marked_points':[],'annotations':[],'verbal_summary':'','graph_document':None,'vlm':None,'notes':[]}
     reading=base['reading']
     if use_vlm:
         try:
@@ -1228,7 +1228,7 @@ def read_graph(source,ocr=None,use_vlm=False):
         if curve_est:path['curve_estimate']=curve_est
         path['verbal_description']=_describe_path_verbal(path,axis_span)
     for pt in points:pt['coordinate']=coords(pt['pixel'])
-    reading.update({'status':'estimated_coordinates','paths':paths,'marked_points':points,'junction_pixels':junctions,'gtool_document':_build_gtool_document(p,sx,sy,paths,points,axis_span),'coordinate_resolution':{'x':round(abs(sx['units_per_pixel'])*3,4),'y':round(abs(sy['units_per_pixel'])*3,4)},'notes':['Coordinates and curve fits are estimates from image pixels and OCR, not exact recovered equations.','Collinear fragments interrupted by axes are bridged when smooth; true gaps and crossings stay separate.','At most 40 fragments and 100 marked-point candidates are returned. Dark curves coinciding with axes may be lost.']})
+    reading.update({'status':'estimated_coordinates','paths':paths,'marked_points':points,'junction_pixels':junctions,'graph_document':_build_graph_document(p,sx,sy,paths,points,axis_span),'coordinate_resolution':{'x':round(abs(sx['units_per_pixel'])*3,4),'y':round(abs(sy['units_per_pixel'])*3,4)},'notes':['Coordinates and curve fits are estimates from image pixels and OCR, not exact recovered equations.','Collinear fragments interrupted by axes are bridged when smooth; true gaps and crossings stay separate.','At most 40 fragments and 100 marked-point candidates are returned. Dark curves coinciding with axes may be lost.']})
     reading['verbal_summary']=_describe_graph_verbal(reading,p)
     if label_points_removed:
         reading['notes'].append('Possible dark dots overlapping tick-label positions were withheld as ambiguous text.')

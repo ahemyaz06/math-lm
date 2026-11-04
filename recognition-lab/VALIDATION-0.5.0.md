@@ -13,7 +13,7 @@ October 25, 2026. This upgrade simplifies the interface and fixes demonstrated P
 - Local AI uses a compact qualitative schema, lossless image input, validation, whole-sentence numerical/formula filtering and at most one correction request. Valid prose is explicitly unverified. AI cannot calibrate axes. PDF AI defaults on when installed; Options permits opting out. Completed OCR is reused for AI attachment.
 - Worker logs and exit codes survive failures. Atomic manifest publication retries bounded Windows access failures; status preserves the last good snapshot and becomes terminal only after worker exit.
 
-No Curious Mind code was imported. No new model or dependency installation is required over 0.4.0. README.txt and CHANGELOG.md are updated with the version.
+No new model or dependency installation is required over 0.4.0. README.txt and CHANGELOG.md are updated with the version.
 
 ## Validation
 

@@ -12,12 +12,12 @@
 ## Unreleased - 2026-10-29 model check fix and Qwen3.6 profile (version number unchanged: 0.7.0)
 
 - Fixed: `_verify_server_identity` read `default_generation_settings.model`, which llama-server leaves empty, so any running model counted as a match and switching profiles never happened. Earlier "Qwen3.5-9B validated" results most likely ran on Qwen3-VL-8B. It now reads `model_path`.
-- New profile `qwen3.6-35b`: the owner's Qwen3.6-35B-A3B file in Desktop\LLM\models with its image file (mmproj-F16, unsloth) in models/qwen3.6-35b-a3b, run by the CUDA llama.cpp in Desktop\LLMin with `--n-cpu-moe 28`. Profiles can now name their own server executable and extra arguments; the server starts in its own folder.
+- New profile `qwen3.6-35b`: a local Qwen3.6-35B-A3B file with its image file (mmproj-F16, unsloth) in models/qwen3.6-35b-a3b, run by a CUDA build of llama.cpp with `--n-cpu-moe 28`. Profiles can now name their own server executable and extra arguments; the server starts in its own folder.
 - Validation: on 8 real course pages the checker found 3 real copying errors for Qwen3-VL-8B, 2 for Qwen3.5-9B, one broken page for Chandra OCR 2 and none for Qwen3.6-35B-A3B (about 10 s a page). Recognition Lab's own default profile is unchanged.
 
 ## Unreleased - 2026-10-29 exact vector graph reader (version number unchanged: 0.7.0)
 
-- New `vector_graph.py`: graphs that a PDF draws with vector instructions (LaTeX TikZ/pgfplots, as in the owner's course handouts) are read from those instructions instead of from pixels. Tick labels are PDF text with exact positions, snapped to grid lines; curves are point lists converted through the calibrated scale. It reports the drawn x/y range, each curve's colour and label (f(x) and so on), corners of straight pieces, turning points and x-axis crossings of smooth curves, open and solid dots, dashed lines, arrows meaning a curve continues, and blank answer grids. Curves drawn past the edge and hidden by LaTeX clipping are cut to the visible frame. Bold labels printed several times over are de-duplicated. If the labels do not form an even linear scale, no numbers are returned.
+- New `vector_graph.py`: graphs that a PDF draws with vector instructions (LaTeX TikZ/pgfplots, as in LaTeX course handouts) are read from those instructions instead of from pixels. Tick labels are PDF text with exact positions, snapped to grid lines; curves are point lists converted through the calibrated scale. It reports the drawn x/y range, each curve's colour and label (f(x) and so on), corners of straight pieces, turning points and x-axis crossings of smooth curves, open and solid dots, dashed lines, arrows meaning a curve continues, and blank answer grids. Curves drawn past the edge and hidden by LaTeX clipping are cut to the visible frame. Bold labels printed several times over are de-duplicated. If the labels do not form an even linear scale, no numbers are returned.
 - Not yet used by this app's own UI; Math Notebook (`../notebook`) uses it through `pdf_inspector` candidates.
 - Validation: 9 new tests in `test_vector_graph.py` against five real course graphs (expected values checked by eye against the rendered pages) plus helper tests; a deliberate clipping break fails them. Full suite: 127 tests, 4 skipped. Raster-only graphs still use the existing OCR reader. Actual NVDA speech was not tested.
 
@@ -38,7 +38,7 @@ User-scenario audit with hostile and unusual uploads. No new dependencies or mod
 
 - The image picker now offers GIF, WebP, BMP and TIFF as well as PNG/JPEG. The reader already opened these; only the picker hid them.
 
-Windows validation (same day, on the owner's PC): 117 Python tests passed (4 skipped), both Node UI suites passed, and GIF/WebP/BMP/TIFF copies of parabola-0.png gave the same detector status as the PNG. Live Qwen3-VL-8B ran on two real course PDF pages through vlm_helper. Actual NVDA speech was not tested.
+Windows validation (same day, on a Windows PC): 117 Python tests passed (4 skipped), both Node UI suites passed, and GIF/WebP/BMP/TIFF copies of parabola-0.png gave the same detector status as the PNG. Live Qwen3-VL-8B ran on two real course PDF pages through vlm_helper. Actual NVDA speech was not tested.
 
 Validation: all Python suites pass in a Linux workspace (Quality-mode and Qwen tests skip there: no layout model or GPU), plus 14 new regression tests in test_audit_20261029.py and an updated text-only-page test in test_pdf.py. 40 hostile/edge-case files were exercised through the HTTP API and a headless browser. Not performed: Quality mode with Heron-101, live Qwen inference, Windows-specific process handling, actual NVDA speech.
 
@@ -90,7 +90,7 @@ Validation and limitations: see VALIDATION-0.5.0.md. Tests distinguish saved-lay
 
 ## 0.4.0 - 2026-10-24
 
-Added a local PDF inspection layer without importing any Curious Mind code.
+Added a local PDF inspection layer.
 
 - Upload one PDF and process a selected range of up to 100 PDF pages.
 - Quality mode combines the original FP32 Docling Heron-101 layout model with PDF drawing/image geometry and raster-axis checks. Basic mode is an explicit alternative without the layout model.

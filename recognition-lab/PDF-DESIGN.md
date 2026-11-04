@@ -1,6 +1,6 @@
 # PDF inspection design and engine choice
 
-The PDF layer is independent of mathematical graph recognition. No Curious Mind source or conversion data is reused.
+The PDF layer is independent of mathematical graph recognition.
 
 Pipeline: upload -> isolated worker -> native text/geometry + rendered page -> trained figure layout + geometry candidates -> label padding -> source-page PNG crop -> existing read_graph -> document manifest + existing graph UI.
 

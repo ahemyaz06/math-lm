@@ -12,7 +12,11 @@ browser. Press **S** for settings and **?** for the keys.
 
 - **Step notes:** each step plays a note for the curve's height. Below zero it is a warm low
   note, at zero a middle note, above zero a clear bell. Above 10 units the pitch starts again
-  from low, and a small tick marks the change.
+  from low, and a small tick marks the change. Each note slides from the last one's pitch,
+  so going up is a short rise and going down a short fall.
+- **Sounds to choose from:** calm sounds, instruments (piano, guitar, harp, marimba, kalimba,
+  vibraphone, flute, cello), beeps and game sounds. Every one uses the same pitch for the same
+  height. In Math Notebook, Settings > Graph sound plays each one as you move through the list.
 - **The bass line:** while playing (Space), a soft low line follows the curve, so the steps
   feel connected.
 - **Points of interest:** a chime at the origin, a tick where the curve crosses an axis, a swell
@@ -25,6 +29,7 @@ browser. Press **S** for settings and **?** for the keys.
 ## Files
 
 - `public/sound-engine.js`: the sounds (Web Audio). The notebook uses this file.
+- `public/voices.js`: the instrument, beep and game voices for the step notes.
 - `public/graph-math.js`: reading a function and finding its zeros, peaks, holes and asymptotes.
   The notebook uses this file too.
 - `public/app.js`, `index.html`, `styles.css`: Sound Lab's own page.

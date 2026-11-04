@@ -245,15 +245,40 @@
     </fieldset>
     <fieldset id="settings-sound">
       <legend>Graph sound</legend>
-      <label for="set-sound_profile">Sound profile</label>
+      <label for="set-sound_profile">Sound</label>
       <select id="set-sound_profile" name="sound_profile">
-        <option value="gentle">Gentle: soft, no sharp attack</option>
-        <option value="warm-acoustic">Warm acoustic: marimba and glass bell</option>
-        <option value="soft-synth">Soft synth</option>
-        <option value="crisp-piano">Crisp piano: clear attack</option>
-        <option value="high-contrast">High contrast: bass against tin</option>
-        <option value="progress">Progress beep: pitch climbs from the bottom of the graph to the top, softer below zero</option>
+        <optgroup label="Calm">
+          <option value="gentle">Gentle: soft, no sharp attack</option>
+          <option value="warm-acoustic">Warm acoustic: marimba and glass bell</option>
+          <option value="soft-synth">Soft synth</option>
+          <option value="crisp-piano">Crisp piano: clear attack</option>
+          <option value="high-contrast">High contrast: bass against tin</option>
+        </optgroup>
+        <optgroup label="Instruments">
+          <option value="piano">Piano</option>
+          <option value="guitar">Guitar: plucked string</option>
+          <option value="harp">Harp</option>
+          <option value="marimba">Marimba: wooden bar</option>
+          <option value="kalimba">Kalimba: thumb piano</option>
+          <option value="vibraphone">Vibraphone: metal bar with a slow shimmer</option>
+          <option value="flute">Flute: soft and breathy</option>
+          <option value="cello">Cello: bowed string</option>
+        </optgroup>
+        <optgroup label="Beeps">
+          <option value="progress">Progress beep: pitch climbs from the bottom of the graph to the top, softer below zero</option>
+          <option value="beep">Beep: short pure tone</option>
+          <option value="soft-square">Computer beep: hollow, rounded</option>
+          <option value="chirp">Chirp: each note slides all the way from the last height</option>
+        </optgroup>
+        <optgroup label="Game sounds">
+          <option value="chiptune">Chiptune: retro square wave</option>
+          <option value="retro-triangle">Retro bass: stepped triangle wave</option>
+          <option value="bubble">Bubble pop</option>
+          <option value="arcade">Arcade blip: note and its octave</option>
+        </optgroup>
       </select>
+      <button type="button" id="sound-listen">Listen</button>
+      <label><input type="checkbox" id="set-pitch_glide" name="pitch_glide"> Clearer pitch: notes slide from the last height and are a little further apart (off: the original sound)</label>
       <label for="set-bass_mode">Bass line while playing</label>
       <select id="set-bass_mode" name="bass_mode">
         <option value="x-and-y">Follows x and the curve's height</option>
@@ -311,7 +336,9 @@
     </div>
     <template class="dialog-help"><p>PDFs made with LaTeX (most course notes and homework) are read from their own text, by rules: every equation exactly as printed.
       The AI add-on, when installed, is only for pictures and for pages whose maths is not stored as text.</p>
-      <p>Graph sound: the sound profile, the bass line while playing, the step, the speed, the sounds for points of interest and the volumes.
+      <p>Graph sound: the sound (calm sounds, instruments, beeps or game sounds), the bass line while playing, the step, the speed, the sounds for points of interest and the volumes.
+      Moving through the sounds plays a few notes of each; Listen plays a whole example: up, down, back to zero, then a solid dot and an open dot.
+      Every sound uses the same pitch for the same height; only its colour changes.
       Numbers you hear are rounded to the nearest half unless you choose otherwise.</p></template>
   </form>
 </dialog>

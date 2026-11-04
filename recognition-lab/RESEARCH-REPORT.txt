@@ -35,7 +35,7 @@ The v0.3.0 pipeline combines deterministic OpenCV + RapidOCR computer vision wit
    - Preserves curve continuity through text boxes and across axis crossings or dot bulges via tangent-aligned path merging (_merge_smooth_paths).
    - Fits parametric equations for straight lines (slope-intercept and vertical), quadratics (snapped in vertex form y = a*(x-h)^2 + k with slope-normalized residuals), cubics (y = a*x^3 + b*x^2 + c*x + d), monotonic square-root curves (y = a*sqrt(x-h) + k), circles, ellipses, symmetric absolute-value V-graphs (y = a*|x-h| + k via two-arm line intersection), and 2-segment piecewise linear functions.
    - Detects isolated, on-curve, and on-axis filled marked points via distance-transform and morphological disc opening while filtering out curve-tip and axis-tip arrowheads.
-   - Generates plain-English verbal descriptions (spoken when pressing I in focus mode) with calibrated axis ranges and integer coordinates along the curves, plus reconstructed coordinate-plane PNGs and GTool JSON documents.
+   - Generates plain-English verbal descriptions (spoken when pressing I in focus mode) with calibrated axis ranges and integer coordinates along the curves, plus reconstructed coordinate-plane PNGs and graph JSON documents.
 
 2. Local 4-bit Vision-Language Model (vlm_helper.py, v0.3.0):
    - Upgraded from Qwen2.5-VL-3B (deleted) to Qwen3-VL-8B-Instruct (Q4_K_M, 5,027.8 MB + 752.3 MB mmproj-Qwen3VL-8B-Instruct-Q8_0.gguf in models/qwen3-vl-8b).

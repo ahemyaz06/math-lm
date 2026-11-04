@@ -73,6 +73,7 @@ function graphText(n) {
     case 'fact': throw new Error('Factorials cannot be graphed.');
     case 'prime': throw new Error("A derivative (f') cannot be graphed from its name; write the function itself.");
     case 'lim': throw new Error('A limit is a number, not a function to graph.');
+    case 'large': throw new Error(`${n.latex === '\\sum' || n.latex === '\\prod' ? 'A sum or product' : 'An integral'} cannot be graphed; graph the function inside it instead.`);
     case 'list': throw new Error('Write one function per line.');
     case 'rel': throw new Error('Only one = sign, as in y = x^2.');
     default: throw new Error('This cannot be graphed.');

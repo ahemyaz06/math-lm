@@ -380,13 +380,24 @@ function keyValues(opts) {
   }
   return out;
 }
-const num = (v) => { const n = Number(String(v ?? '').replace(/[{}]/g, '').trim().replace(/^pi$/, String(Math.PI))); return Number.isFinite(n) ? n : null; };
+// A number from an option; a missing option (xmin not given) is null, not 0.
+const num = (v) => { const s = String(v ?? '').replace(/[{}]/g, '').trim(); if (!s) return null; const n = Number(s.replace(/^pi$/, String(Math.PI))); return Number.isFinite(n) ? n : null; };
+
+// A shaded area (how a page shows an integral), in words for the graph's description.
+function shadeWords(shades) {
+  if (!shades.length) return '';
+  const range = (s) => (s.lo !== null && s.hi !== null ? ` from x = ${spoken(s.lo)} to ${spoken(s.hi)}` : '');
+  return ` Shaded: ${shades.map((s) => `the area ${s.between ? 'between the two curves' : 'under the curve'}${range(s)}`).join('; ')}.`;
+}
 
 function axisGraph(axisOpts, body, ctx) {
   const axis = keyValues(axisOpts);
   const sources = [];
   const points = [];
   const curves = [];
+  const shades = [];
+  const named = {}; // name path=f: which plot it is, for fill between
+  const domainOf = (text) => { const d = (text || '').split(':').map(num); return d.length === 2 && d.every((v) => v !== null) ? d : null; };
   let domain = axis.domain ? axis.domain.split(':').map(num) : null;
   const re = /\\addplot\+?\s*(\[[^\]]*\])?\s*/g;
   for (let m = re.exec(body); m; m = re.exec(body)) {
@@ -403,35 +414,62 @@ function axisGraph(axisOpts, body, ctx) {
       continue;
     }
     if (/^(table|file|gnuplot|\()/.test(rest)) { ctx.notes.push('A pgfplots plot from a table, a file or with parametric coordinates was not read.'); continue; }
+    // \addplot fill between[of=f and g, soft clip={domain=0:1}]: the area between two named plots.
+    const between = /^fill\s+between\s*(\[[^\]]*(?:\{[^}]*\}[^\]]*)*\])?/.exec(rest);
+    if (between) {
+      const o = keyValues((between[1] || '[]').slice(1, -1));
+      const clip = /domain\s*=\s*([^,}\]]+)/.exec(o['soft clip'] || '');
+      const of = (o.of || '').split(/\s+and\s+/).map((s) => s.trim());
+      // Between a curve and a plot of 0 (the x-axis) is the area under the curve.
+      const axisLine = of.some((n) => named[n]?.zero);
+      shades.push({ between: !axisLine, ...(clip ? { lo: domainOf(clip[1])?.[0] ?? null, hi: domainOf(clip[1])?.[1] ?? null } : { lo: null, hi: null }) });
+      for (const n of of) if (named[n]?.zero) named[n].drop = true;
+      re.lastIndex = m.index + m[0].length + between[0].length;
+      continue;
+    }
     const g = /^\{/.test(rest) ? group(rest, 0) : null;
     if (!g) continue;
     re.lastIndex = m.index + m[0].length + g[1];
     const plotDomain = opts.domain ? opts.domain.split(':').map(num) : domain;
+    // \addplot[fill=...] {x^2} \closedcycle: the area under the curve over its domain.
+    const filled = /^\s*\\closedcycle/.test(rest.slice(g[1])) || (opts.fill && opts.fill !== 'none' && !/white/.test(opts.fill));
+    if (filled) {
+      shades.push({ between: false, lo: plotDomain?.[0] ?? null, hi: plotDomain?.[1] ?? null });
+      // The same curve drawn again in full is the graph; the filled part only marks the area.
+      if (body.split(`{${g[0]}}`).length > 2) continue;
+    }
     try {
       let latex = latexOfPlain(pgfToPlain(g[0]));
-      // A plot drawn only on part of the axis is that function on that part.
-      // (A domain as wide as the axis itself is not a restriction.)
-      const axisX = [num(axis.xmin), num(axis.xmax)];
-      const narrower = plotDomain && plotDomain.every((v) => v !== null)
-        && !(axisX.every((v) => v !== null) && plotDomain[0] <= axisX[0] && plotDomain[1] >= axisX[1]);
-      if (narrower) latex = `f(x) = \\begin{cases} ${latex} & ${plotDomain[0]} \\le x \\le ${plotDomain[1]} \\end{cases}`;
-      sources.push({ text: latex, format: 'latex' });
+      if (opts['name path']) named[opts['name path']] = { zero: /^\s*0\s*$/.test(g[0]), index: sources.length };
+      // pgfplots draws a plot over its domain, or the axis's, or -5 to 5.
+      const own = plotDomain && plotDomain.every((v) => v !== null) ? plotDomain : [-5, 5];
+      sources.push({ text: latex, format: 'latex', domain: [Math.min(...own), Math.max(...own)] });
     } catch (error) {
       ctx.notes.push(`A plotted function could not be read: ${g[0]} (${error.message})`);
     }
   }
   const x = [num(axis.xmin), num(axis.xmax)];
   const y = [num(axis.ymin), num(axis.ymax)];
-  const xr = x.every((v) => v !== null) && x[0] < x[1] ? x : domain && domain.every((v) => v !== null) ? domain : null;
+  // Without xmin and xmax the axis is as wide as what is plotted.
+  const widest = sources.length ? [Math.min(...sources.map((src) => src.domain[0])), Math.max(...sources.map((src) => src.domain[1]))] : null;
+  const xr = x.every((v) => v !== null) && x[0] < x[1] ? x : domain && domain.every((v) => v !== null) ? domain : widest;
   const yr = y.every((v) => v !== null) && y[0] < y[1] ? y : null;
-  if (!sources.length && !curves.length && !points.length) return null;
-  const graph = sources.length ? makeGraph(sources, { x: xr, y: yr }) : {
+  // A plot of 0 named only for fill between is the x-axis, not a function to describe.
+  const drop = new Set(Object.values(named).filter((n) => n.drop).map((n) => n.index));
+  // A plot drawn on only part of the axis is that function on that part.
+  const kept = sources.filter((_, i) => !drop.has(i)).map((src) => (xr && (src.domain[0] > xr[0] + 1e-9 || src.domain[1] < xr[1] - 1e-9)
+    ? { ...src, text: `f(x) = \\begin{cases} ${src.text} & ${src.domain[0]} \\le x \\le ${src.domain[1]} \\end{cases}` } : src));
+  if (!kept.length && !curves.length && !points.length) return null;
+  const graph = kept.length ? makeGraph(kept, { x: xr, y: yr }) : {
     summary: `${curves.map((c) => c.label).join('; ')}${points.length ? `; ${points.length} marked ${points.length === 1 ? 'point' : 'points'}` : ''}.`,
     span: { x: xr || [-5, 5], y: yr || [-5, 5] }, functions: [], points: [],
   };
+  // A plot simply stops at the end of its domain: pgfplots draws no dot there.
+  for (const pt of graph.points || []) graph.summary = graph.summary.replace(`; ${pt.label}`, '').replace(`: ${pt.label}; `, ': ').replace(`: ${pt.label}.`, '.');
   graph.curves = [...(graph.curves || []), ...curves];
-  graph.points = [...(graph.points || []), ...points];
-  if (points.length && sources.length) graph.summary += ` Marked: ${points.map((p) => `${p.kind} at ${p.coordinate.join(', ')}`).join('; ')}.`;
+  graph.points = points;
+  if (points.length && kept.length) graph.summary += ` Marked: ${points.map((p) => `${p.kind} at ${p.coordinate.join(', ')}`).join('; ')}.`;
+  graph.summary += shadeWords(shades);
   return graph;
 }
 
@@ -491,7 +529,7 @@ function drawCommands(body) {
 //   (filled or white), \fill (x,y) circle (solid) and \draw[fill=white] (x,y) circle (open).
 // Returns null when the picture draws no function.
 function tikzPlotGraph(body, ctx) {
-  const plots = [], polylines = [], dots = [];
+  const plots = [], polylines = [], dots = [], shades = [];
   let x = null, y = null, clip = null;
   for (const d of drawCommands(body)) {
     const dashed = /dash|dot|help lines|gr[ae]y|very thin/.test(d.opts);
@@ -507,6 +545,11 @@ function tikzPlotGraph(body, ctx) {
       if (domain.length !== 2 || domain.some((v) => v === null)) continue;
       const expr = g[0].replace(new RegExp(`\\\\${variable}\\b`, 'g'), '\\x');
       const label = /^\s*\)\s*node\s*(\[[^\]]*\])?\s*\{\s*\$([^$]*)\$\s*\}/.exec(d.rest.slice(g[1]));
+      // \fill (0,0) -- plot (\x, {\x^2}) -- (2,0) -- cycle: a shaded area under the curve.
+      if ((d.command === 'fill' || /(^|,)\s*fill\b(?!\s*=\s*white)/.test(d.opts)) && /--\s*cycle/.test(d.rest)) {
+        shades.push({ between: false, lo: Math.min(...domain), hi: Math.max(...domain), expr });
+        if (d.command === 'fill') continue;
+      }
       plots.push({ expr, lo: Math.min(...domain), hi: Math.max(...domain), left: /<-|latex-|stealth-/.test(d.opts), right: /->|-latex|-stealth/.test(d.opts), label: label ? label[2] : null });
       continue;
     }
@@ -553,6 +596,8 @@ function tikzPlotGraph(body, ctx) {
     x ||= [Math.min(clip[0], clip[2]), Math.max(clip[0], clip[2])];
     y ||= [Math.min(clip[1], clip[3]), Math.max(clip[1], clip[3])];
   }
+  // Only filled, never drawn: the shaded area's edge is the curve.
+  if (!plots.length) plots.push(...shades.map((sh) => ({ expr: sh.expr, lo: sh.lo, hi: sh.hi, left: false, right: false, label: null })));
   if (!plots.length && !polylines.length) return null;
   // Straight lines alone are a graph only with axes: a box and an arrow are a drawing.
   if (!plots.length && !x && !y) return null;
@@ -577,6 +622,7 @@ function tikzPlotGraph(body, ctx) {
     } else if (polylines.length) {
       graph.summary += ` Also straight pieces through ${polylines.map((pts) => pts.map((p) => `${spoken(p[0])}, ${spoken(p[1])}`).join('; then ')).join('. And ')}.`;
     }
+    graph.summary += shadeWords(shades);
     return graph;
   } catch (error) {
     ctx.notes.push(`A function drawn with TikZ could not be read: ${plots.map((p) => p.expr).join('; ')} (${error.message})`);

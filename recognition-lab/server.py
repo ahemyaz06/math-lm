@@ -58,7 +58,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.path == '/health':
             from vlm_helper import is_vlm_installed
             from layout_detector import available
-            return self.send(200, json.dumps({'app': 'gtool-plane-detector', 'version': VERSION,
+            return self.send(200, json.dumps({'app': 'recognition-lab', 'version': VERSION,
                 'vlm_installed': is_vlm_installed(), 'pdf_available': dependencies_available(), 'layout_available': available()}).encode())
         if self.path in ('/settings','/pdf-jobs'):
             if not self.authorized():return self.error(403,'Local page authorization required.')
@@ -230,7 +230,7 @@ if __name__ == '__main__':
             if not re.fullmatch(r'http://127\.0\.0\.1:[1-9][0-9]{0,4}/',url):raise ValueError('Invalid local URL')
             with urllib.request.urlopen(url+'health',timeout=2) as response:
                 health=json.load(response)
-            if health.get('app')!='gtool-plane-detector':raise ValueError('Different local application')
+            if health.get('app')!='recognition-lab':raise ValueError('Different local application')
             print(url,flush=True)
             if '--open' in __import__('sys').argv:webbrowser.open(url)
             raise SystemExit(0)

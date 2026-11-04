@@ -4,20 +4,26 @@
 const FUNCTIONS = ['arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'ln', 'log', 'exp', 'lim', 'max', 'min'];
 const GREEK = ['alpha', 'beta', 'gamma', 'delta', 'Delta', 'epsilon', 'theta', 'Theta', 'lambda', 'mu', 'pi', 'Pi', 'rho', 'sigma', 'Sigma', 'tau', 'phi', 'omega', 'Omega'];
 const RELATIONS = { '<=': '\\le', '>=': '\\ge', '!=': '\\ne', '=': '=', '<': '<', '>': '>', '->': '\\to', '~=': '\\approx' };
-const SYMBOLS = { inf: '\\infty', infinity: '\\infty', pm: '\\pm', '+-': '\\pm', dx: 'dx' };
+const SYMBOLS = { inf: '\\infty', infinity: '\\infty', pm: '\\pm', '+-': '\\pm', dx: 'dx', dy: 'dy', dz: 'dz', dt: 'dt', du: 'du', dr: 'dr', ds: 'ds', dA: 'dA', dV: 'dV' };
+// Integrals and sums: int_0^1 x^2 dx, sum_(n=1)^inf 1/n^2. "integral" is the word for int.
+const LARGE = { int: '\\int', integral: '\\int', iint: '\\iint', iiint: '\\iiint', oint: '\\oint', sum: '\\sum', prod: '\\prod' };
+// Maths characters pasted from elsewhere (∫ x² dx copied from a page) read as their typed words.
+const PASTED = { '∫': 'int', '∬': 'iint', '∭': 'iiint', '∮': 'oint', '∑': 'sum', '∏': 'prod', 'π': 'pi', '∞': 'inf',
+  '≤': '<=', '≥': '>=', '≠': '!=', '·': '*', '×': '*', '−': '-', '÷': '/', '²': '^2', '³': '^3' };
 
 function tokenize(text) {
   const tokens = [];
+  const source = text.replace(/[∫∬∭∮∑∏π∞≤≥≠·×−÷²³]/g, (ch) => ` ${PASTED[ch]} `).replace(/ (\^[23]) /g, '$1');
   const re = /\s*(\d+(?:\.\d+)?|\.\d+|<=|>=|!=|->|~=|\+-|[A-Za-z]+|[-+*/^_=<>(),[\]{}|'!:;]|\S)/gy;
   let m;
-  while ((m = re.exec(text))) tokens.push(m[1]);
+  while ((m = re.exec(source))) tokens.push(m[1]);
   return tokens;
 }
 
 // Split runs like "xy" or "2x" written without * into separate letters, but keep
 // function names (sin, ln), Greek names (theta) and symbol words (inf) whole.
 function splitWord(word) {
-  const known = [...FUNCTIONS, ...GREEK, ...Object.keys(SYMBOLS), 'sqrt', 'abs', 'cbrt', 'root', 'text'].sort((a, b) => b.length - a.length);
+  const known = [...FUNCTIONS, ...GREEK, ...Object.keys(SYMBOLS), ...Object.keys(LARGE), 'sqrt', 'abs', 'cbrt', 'root', 'text'].sort((a, b) => b.length - a.length);
   const out = [];
   let rest = word;
   while (rest) {
@@ -140,6 +146,19 @@ class Parser {
       if (this.eat('_')) under = this.primary();
       return { type: 'lim', under, arg: this.unary() };
     }
+    if (LARGE[t]) {
+      // Its limits in either order (int_0^1 or int^1_0), then the body. The body of an integral
+      // runs to its dx (or to an = or a comma); a sum's body is one term, as in print.
+      let sub = null, sup = null;
+      for (let k = 0; k < 2; k += 1) {
+        if (!sub && this.eat('_')) sub = this.primary();
+        else if (!sup && this.eat('^')) sup = this.primary();
+      }
+      const integral = LARGE[t] !== '\\sum' && LARGE[t] !== '\\prod';
+      const starts = this.startsFactor(this.peek()) || this.peek() === '-' || LARGE[this.peek()];
+      const body = !starts ? null : integral ? this.sum() : this.term();
+      return { type: 'large', latex: LARGE[t], sub, sup, body };
+    }
     if (FUNCTIONS.includes(t)) {
       let power = null;
       // log_2 x, log_b(x): a logarithm's base is written as a subscript.
@@ -175,6 +194,8 @@ function toLatex(n) {
       const left = toLatex(n.left), right = toLatex(n.right);
       // 3*x is written 3x, as in print; a number after anything needs a dot (2 \cdot 3, x \cdot 2).
       if (n.right.type === 'num' || (/\d$/.test(left) && /^\d/.test(right))) return `${left} \\cdot ${right}`;
+      // x^2 dx: the thin space printed before a differential.
+      if (n.right.type === 'sym' && SYMBOLS[n.right.latex] === n.right.latex && /^d/.test(right)) return `${left}\\,${right}`;
       // \pi x needs a space so it is not read as the command \pix.
       return /\\[A-Za-z]+$/.test(left) && /^[A-Za-z]/.test(right) ? `${left} ${right}` : `${left}${right}`;
     }
@@ -195,6 +216,10 @@ function toLatex(n) {
     }
     case 'sqrt': return n.index ? `\\sqrt[${toLatex(typeof n.index === 'string' ? { type: 'num', value: n.index } : n.index)}]{${toLatex(strip(n.arg))}}` : `\\sqrt{${toLatex(strip(n.arg))}}`;
     case 'lim': return `\\lim_{${n.under ? toLatex(strip(n.under)) : ''}} ${toLatex(n.arg)}`;
+    case 'large': {
+      const limits = `${n.sub ? `_{${toLatex(strip(n.sub))}}` : ''}${n.sup ? `^{${toLatex(strip(n.sup))}}` : ''}`;
+      return `${n.latex}${limits}${n.body ? ` ${toLatex(n.body)}` : ''}`;
+    }
     case 'fn': {
       const name = ['arcsin', 'arccos', 'arctan', 'sinh', 'cosh', 'tanh', 'sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'ln', 'log', 'exp', 'max', 'min'].includes(n.name) ? `\\${n.name}` : `\\operatorname{${n.name}}`;
       const arg = n.arg.type === 'paren' ? toLatex(n.arg) : ` ${toLatex(n.arg)}`;
@@ -284,7 +309,8 @@ function wrap(text) {
 export function latexToPlain(latex) {
   let out = '';
   let i = 0;
-  const src = latex.replace(/\\left|\\right|\\big|\\Big|\\bigg|\\Bigg|\\displaystyle/g, '');
+  // \limits only moves an integral's limits; the plain text has one way to write them.
+  const src = latex.replace(/\\left|\\right|\\big|\\Big|\\bigg|\\Bigg|\\displaystyle|\\(?:no)?limits(?![A-Za-z])/g, '');
   while (i < src.length) {
     const ch = src[i];
     if (ch === '\\') {
@@ -346,6 +372,10 @@ export function latexToPlain(latex) {
 
 // Words a screen reader can say for a short equation label, e.g. in a graph list.
 export function speakable(plain) {
-  return plain.replace(/\^2\b/g, ' squared').replace(/\^3\b/g, ' cubed').replace(/\^/g, ' to the ').replace(/\*/g, ' times ')
+  const LARGE_WORDS = { int: 'integral', iint: 'double integral', iiint: 'triple integral', oint: 'contour integral', sum: 'sum', prod: 'product' };
+  const unwrap = (s) => s.replace(/^\((.*)\)$/, '$1');
+  return plain.replace(/\b(iiint|iint|oint|int|sum|prod)(?:_(\([^)]*\)|[^\s^]+))?(?:\^(\([^)]*\)|\S+))?(?=\s|$)/g,
+    (m, word, sub, sup) => `${LARGE_WORDS[word]}${sub ? ` ${sup ? 'from' : 'over'} ${unwrap(sub)}` : ''}${sup ? ` to ${unwrap(sup)}` : ''} of`)
+    .replace(/\^2\b/g, ' squared').replace(/\^3\b/g, ' cubed').replace(/\^/g, ' to the ').replace(/\*/g, ' times ')
     .replace(/\//g, ' over ').replace(/sqrt/g, 'square root of ').replace(/\s+/g, ' ').trim();
 }

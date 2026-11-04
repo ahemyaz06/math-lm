@@ -110,10 +110,10 @@ export class GraphMode {
     root.addEventListener('blur', () => this.pause(false));
   }
 
-  // Settings > Graph sound (the values Sound Lab and GTool used to set on their own).
+  // Settings > Graph sound.
   applySettings(s) {
     this.settings = { sound_profile: 'gentle', bass_mode: 'x-and-y', step: 0.5, play_speed_ms: 400, cues: true,
-      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', graph_numbers: 'half', ...this.settings, ...s };
+      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', graph_numbers: 'half', pitch_glide: true, ...this.settings, ...s };
     const v = this.settings;
     this.sound.setSoundProfile(v.sound_profile);
     this.sound.setBassOutlineMode(v.bass_mode);
@@ -122,7 +122,35 @@ export class GraphMode {
     this.sound.setBassOutlineVolume(v.bass_volume);
     this.sound.setStepDelayMs(v.play_speed_ms);
     this.sound.setDotSounds(v.dot_sounds);
+    this.sound.setPitchGlide(v.pitch_glide);
     setNumberStyle(v.graph_numbers);
+  }
+
+  // Settings > Graph sound: hear a sound before saving it. The example climbs from 0 to 3,
+  // falls to minus 2 and comes back to 0, from left to right; then a solid dot and an open dot.
+  // short: just a climb and a fall, when moving through the choices.
+  preview(values, short = false) {
+    const engine = this.previewEngine ||= new CalculusSoundEngine();
+    const v = { ...this.settings, ...values };
+    engine.setSoundProfile(v.sound_profile);
+    engine.setVolume(v.volume);
+    engine.setPitchGlide(v.pitch_glide);
+    engine.setDotSounds(v.dot_sounds);
+    engine.setStepDelayMs(300);
+    engine.setWindow({ y: [-3, 4] });
+    for (const t of this.previewTimers || []) clearTimeout(t);
+    const ys = short ? [0, 1, 2, 1, 0] : [0, 0.5, 1, 1.5, 2, 2.5, 3, 2.5, 2, 1.5, 1, 0.5, 0, -0.5, -1, -1.5, -2, -1.5, -1, -0.5, 0];
+    const gap = short ? 220 : 300;
+    this.previewTimers = ys.map((y, i) => setTimeout(() => {
+      const x = -4 + (8 * i) / (ys.length - 1);
+      engine.playSeatedPulse(x, y, 4, i ? ys[i - 1] : null);
+    }, i * gap));
+    if (!short) {
+      const end = ys.length * gap + 300;
+      this.previewTimers.push(setTimeout(() => engine.playLandmarkEffect('solid-point', 0, 4, 1), end));
+      this.previewTimers.push(setTimeout(() => engine.playLandmarkEffect('open-point', 0, 4, 1), end + 700));
+    }
+    return short ? '' : 'Up from 0 to 3, down to minus 2, back to 0; then a solid dot and an open dot.';
   }
 
   // graph: { title, summary, span: {x:[a,b], y:[c,d]}, curves: [...], points: [...], equations: [...] }

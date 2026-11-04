@@ -1,5 +1,5 @@
 """Math Notebook settings: one file for everything the separate labs used to set on their
-own (Recognition Lab's reading, Sound Lab's sounds, GTool's cursor tones).
+own (Recognition Lab's reading, Sound Lab's sounds, the cursor tones).
 
 Saved as settings.json next to the notebook's other data. Only the Settings dialog
 changes it; imported documents never can.
@@ -53,14 +53,19 @@ def _spec():
         'second_model': (models[1] if len(models) > 1 else '', None),
         'pages_at_once': (int(os.environ.get('MATH_NOTEBOOK_WORKERS', '2')), [1, 2]),
         # Graph sound (Sound Lab)
-        'sound_profile': ('gentle', ['gentle', 'warm-acoustic', 'soft-synth', 'crisp-piano', 'high-contrast', 'progress']),
+        # The calm profiles, then the voices in sound-lab/public/voices.js (instruments, beeps, game sounds)
+        'sound_profile': ('gentle', ['gentle', 'warm-acoustic', 'soft-synth', 'crisp-piano', 'high-contrast', 'progress',
+                                     'piano', 'guitar', 'harp', 'marimba', 'kalimba', 'vibraphone', 'flute', 'cello',
+                                     'beep', 'soft-square', 'chirp', 'chiptune', 'retro-triangle', 'bubble', 'arcade']),
+        # Clearer pitch: notes slide from the last height's pitch and are further apart (off: the original)
+        'pitch_glide': (True, [True, False]),
         'bass_mode': ('x-and-y', ['x-and-y', 'x-only', 'y-only', 'off']),
         'step': (0.5, [0.1, 0.25, 0.5, 1]),
         'play_speed_ms': (400, [800, 400, 250, 150]),
         'cues': (True, [True, False]),
         'volume': (0.25, (0.05, 0.5)),
         'bass_volume': (0.35, (0.1, 0.9)),
-        # Moving freely in a graph (GTool's cursor sounds)
+        # Moving freely in a graph: cursor tones
         'free_move_tones': (True, [True, False]),
         # Dots and corners: bump, wind and corner slide ('new') or the earlier sounds
         'dot_sounds': ('new', ['new', 'original']),

@@ -1,7 +1,7 @@
 # Version 0.4.0 validation - 2026-10-24
 
 Installed at %USERPROFILE%\Desktop\graphing\recognition-lab.
-No Curious Mind code or data was incorporated. No user/course/workshop PDF was opened during implementation validation.
+No user/course/workshop PDF was opened during implementation validation.
 
 ## Automated checks
 
