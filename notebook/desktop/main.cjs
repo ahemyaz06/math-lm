@@ -324,8 +324,8 @@ async function createWindow() {
 // by default). It asks GitHub for the latest release of the public repository: one request,
 // with nothing about you or your documents. Nothing is downloaded or installed; a newer
 // version is offered as a link to its download page. Tests point it at a local page.
-const UPDATE_URL = process.env.MATH_NOTEBOOK_UPDATE_URL || 'https://api.github.com/repos/ahemyaz06/math-lm/releases/latest';
-const RELEASES_PAGE = 'https://github.com/ahemyaz06/math-lm/releases/latest';
+const UPDATE_URL = process.env.MATH_NOTEBOOK_UPDATE_URL || 'https://api.github.com/repos/ahemyaz06/math-notebook/releases/latest';
+const RELEASES_PAGE = 'https://github.com/ahemyaz06/math-notebook/releases/latest';
 
 // "0.10.0" is newer than "0.9.2": compared number by number, not as text.
 function isNewer(latest, current) {

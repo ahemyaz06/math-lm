@@ -1,4 +1,4 @@
-# Math LM: an accessible maths notebook
+# Math Notebook
 
 A notebook for blind students doing maths, built for the NVDA screen reader with MathCAT and
 used from the keyboard. Write notes and homework like in Word, with every equation stored as

@@ -1,5 +1,5 @@
 {
-  "name": "math-lm",
+  "name": "math-notebook",
   "version": "0.7.5",
   "private": true,
   "description": "An accessible maths notebook for blind students: NVDA and MathCAT, graphs explored by sound",
