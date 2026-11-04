@@ -814,6 +814,7 @@ let graphReturn = null;
 const graphMode = new GraphMode({
   root: $('graph-mode'), status: $('status'), reading: $('graph-reading'),
   onExit: () => { doc.focus(); if (graphReturn) placeCaretIn(graphReturn); say('Back in the document.'); },
+  onKeys: () => showKeys('graph'),
 });
 
 function exploreGraph(block = currentBlock()) {
@@ -1800,45 +1801,58 @@ for (const dialog of document.querySelectorAll('dialog')) {
   dialog.addEventListener('keydown', (e) => { if (e.key === 'F1') { e.preventDefault(); e.stopPropagation(); showDialogHelp(dialog); } });
 }
 
-async function showKeys() {
+// The keyboard shortcuts page (F1): one table per part, one key per row, so it reads row by
+// row and H jumps between parts. The parts you use most come first. section 'graph' opens it
+// at the graph mode keys (F1 or question mark in graph mode).
+async function showKeys(section = null) {
   if ($('keys-dialog').open) return;
   const body = $('keys-body');
-  body.replaceChildren(el('p', {}, 'Every command is in the menus (Alt). The keys below are the same as in Word wherever Word has one.'));
-  const menus = desktop?.getMenu ? await desktop.getMenu() : [];
-  for (const menu of menus) {
-    const rows = menu.items.filter((i) => i.label);
-    if (!rows.length) continue;
-    body.append(el('h3', {}, menu.label));
-    const table = el('table');
+  body.replaceChildren(el('p', {}, 'H jumps to the next part, T to the next table; the arrow keys read one key at a time. Escape closes.'));
+  const table = (name, rows, id = null) => {
+    const h = el('h3', id ? { id, tabindex: '-1' } : {}, name);
+    const t = el('table');
     const head = el('tr');
-    head.append(el('th', { scope: 'col' }, 'Command'), el('th', { scope: 'col' }, 'Key'));
-    table.append(head);
-    for (const item of rows) {
-      const tr = el('tr');
-      tr.append(el('td', {}, item.label), el('td', {}, item.key || ''));
-      table.append(tr);
-    }
-    body.append(table);
-  }
+    head.append(el('th', { scope: 'col' }, 'What it does'), el('th', { scope: 'col' }, 'Key'));
+    t.append(head);
+    for (const [what, key] of rows) { const tr = el('tr'); tr.append(el('td', {}, what), el('td', {}, key)); t.append(tr); }
+    body.append(h, t);
+  };
   const extra = [
-    ['In the document', [['Next and previous heading', 'Ctrl+Page Down, Ctrl+Page Up'], ['Between the toolbar and the document', 'F6'],
-      ['List item in or out a level, next table cell', 'Tab, Shift+Tab'], ['Spelling suggestions on a misspelled word', 'Applications key'],
-      ['Edit the equation at the caret', 'Ctrl+E, or Enter before an equation'], ['New line after an equation', 'Enter after it'],
-      ['Copy the equation above down, to change it', 'F11, or Enter on the blank line under an equation']]],
-    ['In graph mode', [['Step along the function', 'J and K'], ['Play or stop', 'Space'], ['Move freely', 'Arrow keys'],
-      ['Next and previous point of interest', 'Period and comma'], ['Next function', 'Tab'], ['Describe the graph', 'I'],
-      ['Read the point', 'V'], ['Slope here', 'S'], ['Limits from the left and the right', 'L'], ['Slope sound on or off', 'D'], ['Step size', 'F'], ['Ends of the function', 'Home and End'], ['Back to the document', 'Escape']]],
+    ['Most used', [['All keys (this page)', 'F1'], ['The menus', 'Alt'], ['Between the toolbar and the document', 'F6'],
+      ['Save', 'Ctrl+S'], ['Export as a Word document', 'Ctrl+Shift+W'], ['Import a PDF', 'Ctrl+Shift+I'],
+      ['Read the line with its maths spelled out', 'Ctrl+Shift+R'], ['Find', 'Ctrl+F'], ['Headings list', 'Ctrl+Shift+H']]],
+    ['Equations', [['Make the line (or selection) an equation', 'Ctrl+Shift+E'], ['Insert an equation', 'Alt+='],
+      ['Edit the equation', 'Ctrl+E, or Enter before it'], ['New line after an equation', 'Enter after it'],
+      ['Copy the equation above down, to change it', 'F11, or Enter on the blank line under an equation'],
+      ['Equation back to plain text', 'Ctrl+Shift+T'], ['Plain text, LaTeX and MathML', 'Ctrl+Shift+M'],
+      ['In the equation box: plain text or LaTeX', 'Ctrl+L']]],
+    ['Graphs', [['Graph the equation here, or explore the graph here', 'Ctrl+G, or Enter on a graph line'], ['New graph from equations', 'Ctrl+Shift+G']]],
+    ['In graph mode', [['Step along the function', 'J and K'], ['Play or stop', 'Space'], ['Next and previous point of interest', 'Period and comma'],
+      ['Slope here', 'S'], ['Limits from the left and the right', 'L'], ['Slope sound on or off', 'D'],
+      ['Read the point', 'V'], ['Describe the graph', 'I'], ['Move freely', 'Arrow keys'], ['Back on the function', 'C'],
+      ['Next and previous function', 'Tab, Shift+Tab'], ['Ends of the function', 'Home and End'], ['Step size', 'F'],
+      ['These keys', 'F1 or question mark'], ['Back to the document', 'Escape']]],
+    ['Lists, tables and headings', [['Bulleted and numbered list', 'Ctrl+Shift+L, Ctrl+Shift+7'],
+      ['List item in or out a level, next table cell', 'Tab, Shift+Tab'], ['Heading levels 1 to 3, normal text', 'Ctrl+Alt+1, 2, 3, 0'],
+      ['Next and previous heading', 'Ctrl+Page Down, Ctrl+Page Up'], ['Page break', 'Ctrl+Enter'],
+      ['Spelling suggestions on a misspelled word', 'Applications key']]],
   ];
-  for (const [name, rows] of extra) {
-    body.append(el('h3', {}, name));
-    const table = el('table');
-    for (const [what, key] of rows) { const tr = el('tr'); tr.append(el('td', {}, what), el('td', {}, key)); table.append(tr); }
-    body.append(table);
+  for (const [name, rows] of extra) table(name, rows, name === 'In graph mode' ? 'keys-graph' : null);
+  // Then every menu, as the menu bar has it. A command with no key of its own says where it is.
+  const menus = desktop?.getMenu ? await desktop.getMenu() : [];
+  body.append(el('h3', {}, 'The menus (Alt)'));
+  for (const menu of menus) {
+    const rows = menu.items.filter((i) => i.label).map((i) => {
+      const inGraph = /\(([^)]+)\)$/.exec(i.label); // "Slope here (S)": the key in graph mode
+      return [i.label.replace(/\s*\([^)]+\)$/, ''), i.key || (inGraph ? `${inGraph[1]} in graph mode` : 'Menu only')];
+    });
+    if (rows.length) table(`${menu.label} menu`, rows);
   }
   $('keys-dialog').showModal();
-  body.focus();
+  if (section === 'graph') $('keys-graph').focus(); else body.focus();
 }
-$('keys-dialog').addEventListener('close', () => backToDocument());
+// Closing it goes back where you were: graph mode, or the document.
+$('keys-dialog').addEventListener('close', () => { if (!$('graph-mode').hidden) $('graph-mode').focus(); else backToDocument(); });
 
 // ---------- graph mode from the Graph menu ----------
 

@@ -107,11 +107,12 @@ function latexFunction({ latex }) {
 }
 
 export class GraphMode {
-  constructor({ root, status, onExit, reading = null }) {
+  constructor({ root, status, onExit, onKeys = null, reading = null }) {
     this.root = root;
     this.status = status;
     this.reading = reading; // the same words on screen, for sighted helpers
     this.onExit = onExit;
+    this.onKeys = onKeys; // F1 or question mark: the keys, as a table
     this.sound = new CalculusSoundEngine();
     this.applySettings({});
     this.timer = null;
@@ -246,7 +247,7 @@ export class GraphMode {
     this.root.focus();
     const names = this.functions.map((f) => f.label).join('; ');
     this.speak(`Graph mode. ${this.functions.length} ${this.functions.length === 1 ? 'function' : 'functions'}${names ? `: ${names}` : ''}. `
-      + `J and K trace, arrow keys move freely, Space plays, Tab changes function, question mark for keys, Escape returns to the document.`);
+      + `J and K step, Space plays, F1 for all keys, Escape goes back.`);
     this.draw();
   }
 
@@ -472,6 +473,8 @@ export class GraphMode {
     if (e.ctrlKey || e.altKey || e.metaKey) return;
     const k = e.key;
     const handled = () => e.preventDefault();
+    // The keys as a table to read row by row (not one long sentence).
+    if ((k === 'F1' || k === '?' || k === 'h' || k === 'H') && this.onKeys) { handled(); this.pause(false); this.onKeys(); return; }
     if (k === 'Escape') { handled(); this.close(); return; }
     if (k === 'k' || k === 'K') { handled(); this.pause(false); this.tracing = true; this.traceTo(this.onGrid(this.x) + this.step, false); return; }
     if (k === 'j' || k === 'J') { handled(); this.pause(false); this.tracing = true; this.traceTo(this.onGrid(this.x) - this.step, false); return; }
@@ -521,11 +524,7 @@ export class GraphMode {
     }
     if (k === '?' || k === 'h' || k === 'H') {
       handled();
-      this.speak('K or J: step along the function, forward or back. Arrow keys: move freely; a tone plays when you land on a curve. '
-        + 'C: put the cursor back on the function. Space: play or stop with the bass line; stopping reads the point. '
-        + 'Tab and Shift+Tab: next or previous function. Period and comma: next or previous point of interest. '
-        + 'Home and End: ends of the function. V: read the point. I: describe the graph. S: the slope here. L: the limits from the left and the right. '
-        + 'D: slope sound on or off. F: step size. Escape: back to the document.');
+      this.speak('J and K step, Space plays, period and comma jump, S slope, L limits, I describes, Escape goes back.');
     }
   }
 
