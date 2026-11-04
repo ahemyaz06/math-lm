@@ -25,6 +25,18 @@ anywhere on a 64-bit Windows PC and double-click `Math Notebook.exe`: it carries
 Python and the window, and keeps its settings and read PDFs in a `data` folder beside
 the exe. It is this same notebook without the AI add-on; `Read me first.txt` inside
 explains it.
+## The installed version (a Windows setup)
+
+`recognition-lab\.venv\Scripts\python.exe notebook\build_release.py` makes both release
+files at once: `dist\Math-Notebook-portable.zip` and `dist\Math-Notebook-Setup.exe` (with
+[Inno Setup 6](https://jrsoftware.org/isinfo.php); its script is `notebook\installer\MathNotebook.iss`),
+plus `dist\SHA256SUMS.txt`. The setup holds the same files as the portable version and
+an `INSTALLED` marker: the installed copy never writes beside its exe, and keeps its
+settings, read PDFs and window files in `%LOCALAPPDATA%\MathNotebook`, as the full app
+does. It installs for the current user by default (no administrator prompt), with all
+users as a choice. A newer setup upgrades in place and keeps the data; uninstalling asks
+whether to keep it (yes by default; `/REMOVEDATA` removes it in a silent uninstall). The
+version is set once, in `notebook\VERSION`, and shown in Help > About.
 ## Writing (the keys are Word's)
 
 - Type normally. Ctrl+B, Ctrl+I, Ctrl+U: bold, italic, underline (the status line says

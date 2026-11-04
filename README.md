@@ -17,11 +17,20 @@ Everything runs on your own computer. Nothing is sent anywhere.
 
 The notebook needs the other two folders, so keep them together.
 
-## The quickest start: the portable app (Windows, no setup)
+## The quickest start: download it (Windows)
 
-Download `Math-Notebook-portable.zip` from this repository's **Releases** page, unzip it
-anywhere, and run `Math Notebook.exe`. It carries everything it needs. It has no AI add-on,
-which only matters for describing pictures. `Read me first.txt` inside explains the rest.
+This repository's **Releases** page has two ways to get the same app. Neither has the AI
+add-on, which only matters for describing pictures.
+
+- `Math-Notebook-Setup.exe` installs it: a Start menu shortcut, an uninstaller in
+  Installed apps, and newer versions install over older ones and keep your settings. It
+  installs for you only (no administrator needed) unless you choose all users.
+- `Math-Notebook-portable.zip` needs no install: unzip it anywhere (even a USB stick) and run
+  `Math Notebook.exe`. Its settings stay in a `data` folder beside it. `Read me first.txt`
+  inside explains the rest.
+
+The app is not code-signed, so Windows SmartScreen may warn before it runs the setup or the
+exe: choose "More info", then "Run anyway".
 
 ## Running from this folder (Windows)
 

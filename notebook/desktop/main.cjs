@@ -10,6 +10,14 @@ const NOTEBOOK = path.join(__dirname, '..');
 const PORTABLE_PYTHON = path.join(NOTEBOOK, '..', 'python', 'python.exe');
 const PORTABLE = fs.existsSync(PORTABLE_PYTHON) && fs.existsSync(path.join(NOTEBOOK, 'PORTABLE'));
 const PYTHON = PORTABLE ? PORTABLE_PYTHON : path.join(NOTEBOOK, '..', 'recognition-lab', '.venv', 'Scripts', 'python.exe');
+// The installed version is the portable build plus an INSTALLED marker (written by the setup).
+// It never writes beside its exe (Program Files is read-only): settings, read PDFs and the
+// window's own files all go to %LOCALAPPDATA%\MathNotebook, as in the normal app.
+const INSTALLED = PORTABLE && fs.existsSync(path.join(NOTEBOOK, 'INSTALLED'));
+const VERSION = (() => { try { return fs.readFileSync(path.join(NOTEBOOK, 'VERSION'), 'utf8').trim(); } catch { return ''; } })();
+if (INSTALLED) {
+  app.setPath('userData', path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'MathNotebook', 'window'));
+}
 
 // Portable: settings and read PDFs live in a "data" folder beside Math Notebook.exe, so the
 // folder can be carried on a USB stick; if that folder cannot be written, the usual place is used.
@@ -39,7 +47,11 @@ function startServer() {
       return;
     }
     const env = { ...process.env, MATH_NOTEBOOK_PORT: '0', PYTHONIOENCODING: 'utf-8' };
-    if (PORTABLE) {
+    if (INSTALLED) {
+      env.MATH_NOTEBOOK_NO_AI = '1';
+      // Python's cache files go beside the data, not into the install folder.
+      env.PYTHONPYCACHEPREFIX = path.join(process.env.MATH_NOTEBOOK_DATA || path.join(process.env.LOCALAPPDATA || app.getPath('appData'), 'MathNotebook'), 'cache');
+    } else if (PORTABLE) {
       env.MATH_NOTEBOOK_NO_AI = '1';
       const data = process.env.MATH_NOTEBOOK_DATA || portableData();
       if (data) env.MATH_NOTEBOOK_DATA = data;
@@ -178,6 +190,10 @@ function buildMenu() {
       { label: '&Keyboard shortcuts', accelerator: 'F1', click: send('keys') },
       { label: '&Sound guide: learn the graph sounds', click: send('soundGuide') },
       { label: '&Open the user guide', click: () => shell.openPath(path.join(NOTEBOOK, 'README.md')) },
+      { type: 'separator' },
+      { label: '&About Math Notebook', click: () => dialog.showMessageBox(win, { type: 'info', title: 'About Math Notebook', buttons: ['OK'],
+        message: `Math Notebook ${VERSION}`.trim(),
+        detail: `${INSTALLED ? 'Installed version' : PORTABLE ? 'Portable version' : 'Full version'}${PORTABLE ? ', without the AI add-on' : ''}. A personal project of Emir.` }) },
     ] },
   ];
   // These keys are run by the page itself (editor.js, DOCUMENT_KEYS), so the menu shows them

@@ -30,7 +30,8 @@ BASE_PYTHON = Path(sys.base_prefix)  # the Python this venv was made from
 
 # What the reader imports (pdf_inspector needs OpenCV and NumPy, the reader pdfplumber and PDFium).
 PACKAGES = ['pypdfium2', 'pdfplumber', 'opencv-python', 'numpy']
-NOTEBOOK_FILES = ['server.py', 'notebook_core.py', 'pdf_text_reader.py', 'checker.py', 'settings.py', 'attachments.py', 'README.md']
+NOTEBOOK_FILES = ['server.py', 'notebook_core.py', 'pdf_text_reader.py', 'checker.py', 'settings.py', 'attachments.py', 'README.md', 'VERSION']
+VERSION = (NOTEBOOK / 'VERSION').read_text(encoding='utf-8').strip()  # the one place the version is set
 LAB_FILES = ['pdf_inspector.py', 'vector_graph.py']
 # Parts of the standard library a reading server never uses.
 STDLIB_SKIP = {'test', 'idlelib', 'tkinter', 'turtledemo', 'ensurepip', 'lib2to3', 'site-packages', '__pycache__', 'pydoc_data'}
@@ -118,7 +119,7 @@ def build():
     (OUT / 'electron.exe').rename(OUT / 'Math Notebook.exe')
     (OUT / 'resources' / 'default_app.asar').unlink(missing_ok=True)
     APP.mkdir(parents=True)
-    (APP / 'package.json').write_text(json.dumps({'name': 'math-notebook', 'productName': 'Math Notebook',
+    (APP / 'package.json').write_text(json.dumps({'name': 'math-notebook', 'productName': 'Math Notebook', 'version': VERSION,
                                                   'main': 'notebook/desktop/main.cjs'}, indent=1), encoding='utf-8')
     # The notebook itself.
     (APP / 'notebook').mkdir()
