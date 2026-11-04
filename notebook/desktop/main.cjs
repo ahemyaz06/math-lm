@@ -136,9 +136,10 @@ function buildMenu() {
       { label: '&Convert line or selection to equation', accelerator: 'Ctrl+Shift+E', click: send('toEquation') },
       { label: 'Convert equation to &plain text', accelerator: 'Ctrl+T', click: send('toPlainText') },
       { label: 'Convert equation to LaTe&X text', accelerator: 'Ctrl+L', click: send('toLatexText') },
-      { label: 'Copy the equation above &down', accelerator: 'F11', click: send('copyEquationDown') },
+      { label: 'Copy the equation above &down (also Shift+Enter)', accelerator: 'F11', click: send('copyEquationDown') },
       { label: 'Convert between plain text, &LaTeX and MathML…', accelerator: 'Ctrl+Shift+M', click: send('convertMath') },
       { label: '&Read line with equations spelled out', accelerator: 'Ctrl+Shift+R', click: send('readLine') },
+      { label: '&Interval for the equation…', accelerator: 'Ctrl+Shift+D', click: send('interval') },
     ] },
     { label: '&Graph', submenu: [
       { label: '&Explore graph by sound', accelerator: 'Ctrl+G', click: send('exploreGraph') },
@@ -158,6 +159,8 @@ function buildMenu() {
       { label: '&Back to the document (Escape)', click: send('graphClose') },
     ] },
     { label: '&Review', submenu: [
+      { label: '&Spelling…', accelerator: 'F7', click: send('spelling') },
+      { label: 'Next &misspelled word', accelerator: 'Alt+F7', click: send('nextMisspelling') },
       { label: '&Word count', click: send('wordCount') },
       { type: 'separator' },
       { label: '&Next review note', accelerator: 'F8', click: send('nextNote') },
@@ -189,6 +192,7 @@ function buildMenu() {
     { label: '&Help', submenu: [
       { label: '&Keyboard shortcuts', accelerator: 'F1', click: send('keys') },
       { label: '&Sound guide: learn the graph sounds', click: send('soundGuide') },
+      { label: '&Check for updates…', click: () => checkForUpdate(true) },
       { label: '&Open the user guide', click: () => shell.openPath(path.join(NOTEBOOK, 'README.md')) },
       { type: 'separator' },
       { label: '&About Math Notebook', click: () => dialog.showMessageBox(win, { type: 'info', title: 'About Math Notebook', buttons: ['OK'],
@@ -200,7 +204,8 @@ function buildMenu() {
   // but does not register them: otherwise a key press could run its command twice.
   const pageKeys = new Set(['Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+L', 'Ctrl+Shift+7', 'Ctrl+Enter', 'Ctrl+Alt+1', 'Ctrl+Alt+2',
     'Ctrl+Alt+3', 'Ctrl+Alt+0', 'Ctrl+Shift+E', 'Ctrl+E', 'Alt+=', 'Ctrl+F', 'Ctrl+H', 'F3', 'Shift+F3', 'Ctrl+Shift+M', 'Ctrl+Shift+W',
-    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9', 'F11', 'Ctrl+T', 'Ctrl+Shift+T', 'Ctrl+L']);
+    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9', 'F11', 'Ctrl+T', 'Ctrl+Shift+T', 'Ctrl+L',
+    'Ctrl+Shift+D', 'F7', 'Alt+F7']);
   for (const menu of template) for (const item of menu.submenu) if (pageKeys.has(item.accelerator)) item.registerAccelerator = false;
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
@@ -314,6 +319,62 @@ async function createWindow() {
   if (!TESTING) win.show();
 }
 
+// ---------- is there a newer version? ----------
+// Only when asked (Help > Check for updates), or at start when Settings > Writing says so (off
+// by default). It asks GitHub for the latest release of the public repository: one request,
+// with nothing about you or your documents. Nothing is downloaded or installed; a newer
+// version is offered as a link to its download page. Tests point it at a local page.
+const UPDATE_URL = process.env.MATH_NOTEBOOK_UPDATE_URL || 'https://api.github.com/repos/ahemyaz06/math-lm/releases/latest';
+const RELEASES_PAGE = 'https://github.com/ahemyaz06/math-lm/releases/latest';
+
+// "0.10.0" is newer than "0.9.2": compared number by number, not as text.
+function isNewer(latest, current) {
+  const a = String(latest).replace(/^v/i, '').split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  const b = String(current).replace(/^v/i, '').split(/[.-]/).map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i += 1) if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+  return false;
+}
+
+// A message box (NVDA reads these); in tests the box is not shown, only remembered.
+async function tell(options) {
+  global.lastUpdateMessage = options.message;
+  if (TESTING) return { response: options.cancelId ?? 0 };
+  return dialog.showMessageBox(win, { type: 'info', title: 'Math Notebook', ...options });
+}
+
+async function checkForUpdate(asked) {
+  let release;
+  try {
+    const response = await fetch(UPDATE_URL, { headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'Math-Notebook' }, signal: AbortSignal.timeout(15000) });
+    if (!response.ok) throw new Error(response.status === 403 || response.status === 429 ? 'GitHub says to wait a while before asking again.' : `GitHub answered ${response.status}.`);
+    release = await response.json();
+  } catch (error) {
+    // At start, a check that fails (no internet) says nothing; asked, it says why.
+    if (asked) await tell({ type: 'warning', message: 'Could not check for a newer version.', detail: `${error.name === 'TimeoutError' ? 'GitHub did not answer.' : error.message} Is this computer online?` });
+    return 'failed';
+  }
+  const latest = String(release.tag_name || '').replace(/^v/i, '');
+  if (latest && isNewer(latest, VERSION)) {
+    const page = /^https:\/\/github\.com\//.test(release.html_url || '') ? release.html_url : RELEASES_PAGE;
+    const { response } = await tell({ message: `Math Notebook ${latest} is available. You have ${VERSION}.`,
+      detail: 'Open its download page in your browser? A newer setup installs over this one and keeps your settings.',
+      buttons: ['Open the download page', 'Not now'], defaultId: 0, cancelId: 1 });
+    if (response === 0) shell.openExternal(page);
+    return 'newer';
+  }
+  if (asked) await tell({ message: `You have the newest version, ${VERSION}.` });
+  return 'newest';
+}
+global.checkForUpdate = checkForUpdate; // used by tests
+
+// At start, only if Settings > Writing has "Check for a newer version when Math Notebook starts".
+async function checkAtStart() {
+  try {
+    const { values } = await (await fetch(`${serverUrl}api/settings`)).json();
+    if (values?.check_updates === true) await checkForUpdate(false);
+  } catch { /* the settings could not be read: no check */ }
+}
+
 app.whenReady().then(async () => {
   buildMenu();
   registerFileHandlers();
@@ -325,6 +386,7 @@ app.whenReady().then(async () => {
     return;
   }
   await createWindow();
+  setTimeout(checkAtStart, 3000); // after the window is up, so a message box has its window
 });
 
 app.on('window-all-closed', () => app.quit());

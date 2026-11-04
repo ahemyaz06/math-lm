@@ -1,7 +1,7 @@
 // Graphs from maths in the document: LaTeX or plain text, including piecewise functions
 // (\begin{cases}), become functions that Sound Lab's engine can trace and describe.
 // Rules, not AI: the maths is parsed and evaluated, never guessed.
-import { latexToPlain, parsePlain, plainToLatex } from './equation.js';
+import { intervalCondition, latexToPlain, parsePlain, plainToLatex, splitDomain } from './equation.js';
 import { compileEquation, compileExpression, detectLandmarks, formatNumber } from '/sound/graph-math.js';
 
 // How numbers are said while exploring a graph (Settings > Graph sound): 'half' rounds to the
@@ -17,7 +17,8 @@ export function roundForSpeech(n) {
   // would make -3.75 into -3.5).
   const to = (k) => Math.sign(n) * Math.round(Math.abs(n) * k) / k;
   const r = numberStyle === 'half' ? to(2) : numberStyle === 'tenth' ? to(10) : n;
-  return Math.abs(r) < 1e-9 ? 0 : r;
+  // A point found a hair inside an open end (1e-9 for "0 < x") is said as that end.
+  return Math.abs(r) < 1e-7 ? 0 : r;
 }
 export const say = (n) => formatNumber(roundForSpeech(n)).replace('-', 'minus ');
 function exactly(work) {
@@ -110,7 +111,10 @@ function comparisons(ast, out = []) {
 const FLIP = { '<': '>', '>': '<', '<=': '>=', '>=': '<=', '=': '=', '!=': '!=' };
 
 export function parseCondition(text) {
-  const words = text.replace(/\b(if|for|when|where)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  let words = text.replace(/\b(if|for|when|where)\b/gi, ' ').replace(/\s+/g, ' ').trim();
+  // x in [0, 2pi), and {0 < x < 1} with its braces.
+  words = words.replace(/^\{(.*)\}$/, '$1').trim();
+  words = intervalCondition(words) || words;
   if (!words || /^(otherwise|else|elsewhere|all other x)$/i.test(words)) return { otherwise: true, text: 'otherwise' };
   const range = { lo: -Infinity, loClosed: false, hi: Infinity, hiClosed: false, not: [], text: words };
   // "x > 0 and x < 2", "x > 0, x < 2": each part is its own comparison.
@@ -164,7 +168,13 @@ export function compileFunction(source, format = /\\[A-Za-z]|[_^]\{/.test(source
   const latex = (format === 'latex' ? source.trim() : plainToLatex(source)).replace(/\s*[.,;]\s*$/, '');
   const cases = caseRows(latex);
   if (cases) return piecewise(cases, latex);
-  // "y = ln(csc x), 0 < x < pi/2": a function with its domain is one row with a condition.
+  // "y = sin x, [0, 2pi]", "y = sin x on [0, 2pi)", "y = x^2 for 0 < x < 1": a function with
+  // its interval is one row with a condition.
+  const domain = splitDomain(latexToPlain(latex));
+  if (domain) {
+    return piecewise({ name: functionSide(parsePlain(domain.main)).name, rows: [[plainToLatex(domain.main.replace(/^[^=]*=/, '')), domain.condition]] }, latex);
+  }
+  // "y = ln(csc x), 0 < x < pi/2": the same, with the comparisons after a comma.
   const parsed = parsePlain(latexToPlain(latex));
   if (parsed.type === 'list' && parsed.items.length >= 2 && parsed.items.slice(1).every(isInequality)) {
     const [first, ...conditions] = latexToPlain(latex).split(',');
@@ -189,13 +199,17 @@ function piecewise({ name, rows }, latex) {
     try { range = parseCondition(latexToPlain(cond)); } catch (error) { throw new Error(`Row ${i + 1}, condition "${latexToPlain(cond)}": ${error.message}`); }
     return { fn, text, range, expr: latexToPlain(expr), cond: range.otherwise ? 'otherwise' : latexToPlain(cond).replace(/\b(if|for|when)\b/gi, '').trim() };
   });
+  const single = rows.length === 1 && !pieces[0].range.otherwise;
   // The first row whose condition holds decides, as when reading the cases top to bottom.
   const pieceAt = (x) => pieces.find((p) => !p.range.otherwise && inRange(p.range, x)) || pieces.find((p) => p.range.otherwise) || null;
   const valueOf = (p, x) => (p ? p.fn.limitAt(x) : { defined: false, hole: false, y: NaN });
   const graph = {
     type: 'function',
     // f(x), or the maths before the brace as words (|x|, for "sqrt(x^2) = |x| = cases").
-    label: `${/^([a-z]\(x\)|y)$/i.test(name) ? name : name ? latexToPlain(name.split('=').at(-1)) : 'f(x)'}, piecewise`,
+    label: single
+      // One formula on an interval is not piecewise: y = sin x (for 0 <= x <= 2 pi).
+      ? `${/^([a-z]\(x\)|y)$/i.test(name) ? name : 'y'} = ${pieces[0].expr}`
+      : `${/^([a-z]\(x\)|y)$/i.test(name) ? name : name ? latexToPlain(name.split('=').at(-1)) : 'f(x)'}, piecewise`,
     hasSteps: false,
     yAt: (x) => { const l = valueOf(pieceAt(x), x); return l.defined ? l.y : NaN; },
     limitAt(x) {
@@ -214,7 +228,8 @@ function piecewise({ name, rows }, latex) {
     // Each row's own divisions by zero, only where that row is the one in use.
     domainChecks: pieces.flatMap((p) => p.fn.domainChecks.map((c) => ({ kind: c.kind, evaluate: (scope) => (pieceAt(scope.x) === p ? c.evaluate(scope) : 1) }))),
   };
-  return { graph, label: graph.label, latex, dots: piecewiseDots(pieces, pieceAt), notes: pieces.map((p) => `${p.expr} when ${p.cond}`),
+  return { graph, label: graph.label, latex, dots: piecewiseDots(pieces, pieceAt), notes: single ? [`for ${pieces[0].cond}`] : pieces.map((p) => `${p.expr} when ${p.cond}`),
+    domain: single ? [pieces[0].range.lo, pieces[0].range.hi] : null,
     rows: pieces.map((p, i) => ({ text: p.text, intervals: rowIntervals(p, pieces.slice(0, i)) })) };
 }
 
@@ -278,7 +293,7 @@ function piecewiseDots(pieces, pieceAt) {
 const nice = (v, up) => {
   if (v === 0) return 0;
   const step = 10 ** Math.floor(Math.log10(Math.abs(v))) / 2;
-  return (up ? Math.ceil(v / step) : Math.floor(v / step)) * step;
+  return Number(((up ? Math.ceil(v / step) : Math.floor(v / step)) * step).toPrecision(12)); // -7 * 0.05 is -0.35, not -0.35000000000000003
 };
 
 export function chooseXRange(functions) {
@@ -289,6 +304,14 @@ export function chooseXRange(functions) {
     const marks = landmarksOf(f.graph, 20).filter((l) => ['open-point', 'asymptote'].includes(l.kind));
     // Asymptotes that repeat (tan x, sec x) do not widen the window: a few periods show the pattern.
     for (const l of marks.length > 4 ? marks.filter((m) => Math.abs(m.x) <= 5) : marks) xs.push(l.x);
+  }
+  // Every function on its own interval (y = sin x, [0, 2pi]): the window is those intervals with
+  // a little room around them, not -5 to 5.
+  const domains = functions.map((f) => f.domain);
+  if (domains.every((d) => d && Number.isFinite(d[0]) && Number.isFinite(d[1]))) {
+    const a = Math.min(...domains.map((d) => d[0])), b = Math.max(...domains.map((d) => d[1]));
+    const room = Math.max((b - a) * 0.05, 0.1);
+    return [nice(a - room, false), nice(b + room, true)];
   }
   const lo = Math.min(...xs), hi = Math.max(...xs);
   const pad = Math.max(1, (hi - lo) * 0.15);

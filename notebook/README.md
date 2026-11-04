@@ -1,9 +1,32 @@
-# Math Notebook 0.5
+# Math Notebook
 
 A document editor for maths that works like Word: your notes and answers in one
 editable document, PDFs converted into it with every equation as real maths, export to
 Word and PDF, and graphs you explore by sound with Sound Lab's engine. Everything runs on
 this computer. The AI is an add-on: without it everything except reading pictures works.
+The version is in Help > About; Help > Check for updates asks GitHub if a newer one is out.
+
+## In this guide
+
+Each part in a sentence; the details follow in the same order.
+
+- **Start**: how to open it, the menus, the toolbar and F1.
+- **The portable version** and **The installed version**: the two downloads, where each keeps
+  your settings, and how they are built.
+- **Writing**: Word's keys for text, lists, tables, find, spelling (F7) and saving.
+- **Moving around without changing NVDA's mode**: headings, notes and find while in focus mode.
+- **Maths**: typing equations, moving through one symbol at a time, copying the one above
+  (Shift+Enter), comments (`#`, `//`), intervals (`[0, 2pi]`, Ctrl+Shift+D), conversions.
+- **LaTeX files (.tex)**: importing a teacher's source file exactly, graphs included.
+- **Sharing documents**: Word and PDF out; a PDF from the notebook opens back exactly.
+- **Teacher mode**: hiding lines, words, answers and parts of graphs for a student copy.
+- **Graphs**: graphing an equation (on its interval, if it has one) and what is described.
+- **Converting a PDF**: how pages are read (rules, or the optional AI) and review notes.
+- **Settings**: what each Settings dialog holds.
+- **Graph mode**: every key for exploring a graph by sound, and the sounds.
+- **The reading model**: the optional AI model and what it needs.
+- **Limits, and what is not tested**: what does not work yet, and what has not been heard
+  with NVDA or tried at all.
 
 ## Start
 
@@ -53,6 +76,14 @@ version is set once, in `notebook\VERSION`, and shown in Help > About.
 - Pasting from a web page keeps headings, lists, tables, bold and italic, and its MathML
   becomes real equations; styles, scripts and pictures are left out. Ctrl+Shift+V pastes
   plain text. The Applications key on a misspelled word lists corrections.
+- Spelling, as in Word: F7 goes through the words that are not in the dictionary, from the
+  cursor on. Each is said with its line; choose a suggestion with the arrows and press Enter
+  to change it, or Tab to Change all, Ignore once, Ignore all, Add to dictionary. A doubled
+  word (the the) can be deleted. Change to takes a word of your own. Alt+F7 jumps to the next
+  misspelled word without the box and says its suggestions. It is the Windows spell checker,
+  the same one that draws the red underlines, so Add to dictionary teaches Word and Edge too.
+  Equations and graph descriptions are not checked, nor maths names written as words
+  (sin, ln, arcsin).
 - Ctrl+S saves a `.mathnb` notebook. File > Export as Word document (Ctrl+Shift+W):
   every equation is a real Word equation, so Word, NVDA and MathCAT read it as maths;
   Word itself is not needed for this. File > Export as PDF makes a tagged PDF with the
@@ -73,10 +104,33 @@ current line with equations spelled out.
   Ctrl+Shift+E: the line (or your selection) becomes a real equation.
 - Alt+= inserts an equation. Ctrl+E next to an equation (or Enter before an equation on its
   own line) edits it as plain text; inside, Ctrl+L switches between plain text and LaTeX.
-- Working line by line: Enter after an equation starts a new line. Enter again, on that blank
-  line, copies the equation down to the next line (the blank line stays between them), ready to
-  change with Ctrl+E. F11 copies the last equation above the cursor down at any time (onto this
-  line if it is empty). Settings > Writing can turn off the Enter copy; F11 always works.
+- Working line by line: Enter after an equation starts a new line, always. Shift+Enter (or
+  F11) copies the last equation above the cursor down (onto this line if it is empty, otherwise
+  onto a new line below), ready to change.
+- Moving through an equation: Right arrow into an equation (or Left into it from after it)
+  shows it as its plain text, `f(x) = 3 sin(x), x in [0, pi]`, so the arrows move one symbol at
+  a time and you can type to change it. When the cursor leaves it, it is an equation again,
+  exactly as it was if you changed nothing; Enter there also finishes it and starts a new line.
+  If what you typed is not maths, it stays as text and the notebook says why. Settings > Writing
+  can turn this off (then the arrows go past an equation in one step).
+- Letters in equations are given to NVDA as plain letters (x, not the maths letter 𝑥, which
+  Chromium uses for italics and NVDA reads as "x normalized"). They still look italic.
+- Comments, as in programming: anything after `#` or `//` is a comment and never becomes
+  maths. Type `y = x^2 # the parabola` and press Ctrl+Shift+E: `y = x^2` is the equation and
+  `# the parabola` stays as words beside it. The same works in the equation box (Alt+=) and
+  in the graph box. In LaTeX text `%` starts a comment too, as in a .tex file (`\%` is the
+  percent sign). Enter, F11 and Ctrl+G treat a line with a comment like a line that ends with
+  its equation: the comment is never copied or graphed. A comment (also one you type yourself
+  after an equation) is marked as one and shown in grey italics, and the word "comment" is
+  given to the screen reader before it (it is not shown). In browse mode a comment after an
+  equation that has its own line is read on the next line.
+- Intervals: write where an equation applies after it, the way your class writes it:
+  `y = sin x, [0, 2pi]`, `y = sin x on [0, 2pi)`, `y = tan x, x in (-pi/2, pi/2)`,
+  `y = x^2, [0, inf)`, `y = x^2 for 0 < x < 1` or `y = x^2 {0 < x < 1}`. A square bracket
+  keeps that end, a round one leaves it out. Or put the cursor on an equation and press
+  Ctrl+Shift+D (Math > Interval for the equation): type `[0, 2pi]`, `(0, pi]`, `0 to 2pi`
+  or `0 < x <= pi`; an empty box takes the interval away. The equation shows it as
+  x ∈ [0, 2π], and its graph is only on that interval.
 - Ctrl+Shift+M converts between plain text, LaTeX and MathML, in any direction. The
   result updates as you type; a preview below it can be read with MathCAT; Enter copies
   the result and "Insert as equation" puts it in the document.
@@ -137,6 +191,10 @@ practice: Teacher > Teacher mode. Then:
 
 - Ctrl+G on an equation in the document graphs it, LaTeX or plain text, piecewise functions
   (\begin{cases}) too. The graph line is put under the equation and graph mode opens.
+- A function with an interval (y = sin x, [0, 2pi), see Maths) is graphed only there, with a
+  solid dot at an end it keeps and an open dot at an end it leaves out. The window fits the
+  interval (here x from -0.35 to 7) instead of -5 to 5. Piecewise rows can use intervals too
+  (x^2 & x \in [0, 1)), and pgfplots code keeps them as domain=0:6.28.
 - Insert > Graph from equations (Ctrl+Shift+G): one function per line, plain text or LaTeX,
   or pgfplots code pasted from a .tex file. The x range covers every hole and jump unless you
   give one; the y range is fitted to the graph.
@@ -204,8 +262,12 @@ everything back. Settings are saved in `%LOCALAPPDATA%\MathNotebook\settings.jso
 - Reading PDFs (from Recognition Lab and the reader): how pages are read (above);
   describe pictures with AI; estimate numbers from graph pictures; the reading model;
   a second model that re-reads AI pages with review notes; pages read at the same time.
-- Writing: Enter on the blank line under an equation copies it down; an equation is said
-  when the cursor comes to it (both on by default).
+- Writing: the arrow keys go into an equation and step through it as plain text; an equation
+  is said when the cursor comes to it (both on by default); check for a newer version when
+  the app starts (off by default). The check asks GitHub's public "latest release" address once
+  and, if a newer version is out, a message box offers its download page. Nothing is
+  downloaded or installed by itself. Without internet the check at start says nothing;
+  Help > Check for updates says why it could not check.
 - Graph sound (from Sound Lab): the sound (Gentle by default; also instruments, beeps and game
   sounds, each heard as you move through the list, and Listen plays a whole example), clearer
   pitch (notes slide from the last height; off is the original sound), the slope sound, the bass
@@ -263,12 +325,42 @@ so close other programs that use the graphics card before importing a PDF.
 Another model can be chosen in Settings > Reading PDFs (the environment variable
 MATH_NOTEBOOK_MODELS sets the default).
 
-## Limits
+## Limits, and what is not tested
 
-- How NVDA and MathCAT read equations inside the editable document (focus mode) has not
-  been tested with real speech; Ctrl+Shift+R and editing an equation as plain text always work.
+The automatic tests drive the real app with key presses and check what it does and what it
+says in its status line. They cannot hear NVDA. What has been heard with NVDA so far, and what
+has not:
+
+- Heard and fixed: equations in focus mode said "normalized" on letters (fixed); stepping
+  through an equation with the arrows works; intervals look right.
+- Not yet heard with NVDA: whether NVDA says the word "comment" before a comment (it did not
+  say the comment role itself, so the word was added for it); the Spelling box (F7) and
+  Alt+F7; the Interval box (Ctrl+Shift+D); the Windows setup's own pages (whether its first
+  "install for me or for all users" question reads its choices as buttons, the Welcome text,
+  the checkboxes, and the uninstaller's "keep your data?" question); the newer graph sounds
+  (instruments, beeps, game sounds, and "clearer pitch", which is on by default).
+- With Access8Math as NVDA's maths voice, square brackets can be spoken in Chinese. That is
+  in Access8Math's own English dictionary, not in the notebook; choosing MathCAT as the
+  speech source in Access8Math's settings avoids it.
+- Updates: the app only tells you about a newer version; you download and run the setup (or
+  unzip the new portable copy) yourself. Its message box has not been heard with NVDA. The
+  tests use a stand-in for GitHub, not the real site.
+- Spelling: Add to dictionary is not run by the tests, because it writes to your real
+  Windows dictionary (the one Word uses too). Only the language Windows uses for you is
+  checked (US English if Windows has no spell checker for it). A document in another
+  language, or mixing languages, has not been tried.
+- Intervals: `y = 2x, (1, 2)` (round brackets straight after a comma) is not taken as an
+  interval, because it could be a point; write `on (1, 2)` or `x in (1, 2)`. Only intervals of
+  x are understood (not of y or t), and only one interval per equation.
+- Comments: a `#` or `//` always starts a comment beside an equation; there is no way to
+  write those signs as maths. Everything after the sign, to the end of the line, is the
+  comment, even maths.
+- Stepping through an equation shows it as plain text. Equations from PDFs with LaTeX that
+  plain text cannot say exactly (matrices, unusual symbols) come back exactly only if you
+  change nothing; if you change them, they are rebuilt from the plain text.
 - Undo (Ctrl+Z) undoes typing and formatting, but not equations, tables, lists or page
-  breaks inserted by commands, nor Replace.
+  breaks inserted by commands, nor Replace, nor Spelling changes, nor stepping into an
+  equation.
 - Vertical lines are described but not traced (they are not functions of x).
 - Drawing graphs is not built yet (planned as its own lab). Font sizes, colours and
   alignment are not offered.

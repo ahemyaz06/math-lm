@@ -61,8 +61,10 @@ def _spec():
         'pitch_glide': (True, [True, False]),
         # The slope sound in graph mode: a soft second note for the slope after each step (D turns it on or off)
         'slope_sound': (False, [True, False]),
-        # Writing: Enter on the empty line below an equation copies that equation down (with a blank line between)
-        'enter_copies_equation': (True, [True, False]),
+        # Writing: Right and Left go into an equation and step through its plain text one symbol at a time
+        'step_into_equations': (True, [True, False]),
+        # Ask GitHub for a newer version when the app starts (one request; off unless chosen)
+        'check_updates': (False, [True, False]),
         # Writing: say an equation as plain text when the cursor comes to it (NVDA's focus mode reads only its start)
         'say_equations': (True, [True, False]),
         'bass_mode': ('x-and-y', ['x-and-y', 'x-only', 'y-only', 'off']),

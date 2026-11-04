@@ -30,7 +30,7 @@ BASE_PYTHON = Path(sys.base_prefix)  # the Python this venv was made from
 
 # What the reader imports (pdf_inspector needs OpenCV and NumPy, the reader pdfplumber and PDFium).
 PACKAGES = ['pypdfium2', 'pdfplumber', 'opencv-python', 'numpy']
-NOTEBOOK_FILES = ['server.py', 'notebook_core.py', 'pdf_text_reader.py', 'checker.py', 'settings.py', 'attachments.py', 'README.md', 'VERSION']
+NOTEBOOK_FILES = ['server.py', 'notebook_core.py', 'pdf_text_reader.py', 'checker.py', 'settings.py', 'attachments.py', 'spelling.py', 'README.md', 'VERSION']
 VERSION = (NOTEBOOK / 'VERSION').read_text(encoding='utf-8').strip()  # the one place the version is set
 LAB_FILES = ['pdf_inspector.py', 'vector_graph.py']
 # Parts of the standard library a reading server never uses.
@@ -143,7 +143,7 @@ def build():
 def check():
     """Start the bundled Python the way the app does and import everything the reader needs."""
     py = APP / 'python' / 'python.exe'
-    code = ('import sys, notebook_core, settings, attachments, pdf_inspector, vector_graph, cv2, numpy, pdfplumber, pypdfium2; '
+    code = ('import sys, notebook_core, settings, attachments, spelling, pdf_inspector, vector_graph, cv2, numpy, pdfplumber, pypdfium2; '
             'print(sys.version.split()[0], "AI" if settings.AI else "no AI", sys.prefix)')
     # No compiled cache files from this run: they would carry this computer's folder names.
     env = {'SYSTEMROOT': __import__('os').environ['SYSTEMROOT'], 'MATH_NOTEBOOK_NO_AI': '1', 'MATH_NOTEBOOK_DATA': str(DIST / 'check-data'),

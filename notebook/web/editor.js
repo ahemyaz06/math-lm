@@ -2,10 +2,10 @@
 // from the desktop app's menu bar (Alt), so the page itself has no buttons.
 import temml from './vendor/temml.mjs';
 import { parseBlocks, tableCells } from './markdown.js';
-import { plainToLatex, latexToPlain } from './equation.js';
+import { plainToLatex, latexToPlain, splitComment, splitDomain } from './equation.js';
 import { mathmlToLatex, latexToMathml } from './mathml.js';
 import { makeDocx } from './docx.js';
-import { makeGraph, studentGraph, HIDEABLE } from './graphs.js';
+import { makeGraph, studentGraph, HIDEABLE, parseCondition } from './graphs.js';
 import { texToBlocks, graphFromPgfplots, graphToPgfplots } from './tex.js';
 import { GraphMode } from './graph-mode.js';
 
@@ -48,6 +48,12 @@ export function mathSpan(latex, display = false) {
   if (display) span.dataset.display = 'true';
   try {
     temml.render(latex, span, { displayMode: display, annotate: true, throwOnError: true });
+    // A one-letter <mi> is drawn in italics by Chromium swapping x for the maths letter 𝑥, and
+    // that swapped letter is what NVDA gets in focus mode (it says "normalized"). The CSS turns
+    // the swap off (editor.css); these letters are put in italics the plain way instead.
+    for (const mi of span.querySelectorAll('mi')) {
+      if (!mi.hasAttribute('mathvariant') && /^[A-Za-zα-ω]$/u.test(mi.textContent)) mi.classList.add('tml-italic');
+    }
   } catch {
     span.textContent = latex;
     span.classList.add('math-error');
@@ -324,6 +330,7 @@ function isEmpty() {
 }
 
 function serialize() {
+  settleEquationText();
   const used = new Set([...doc.querySelectorAll('[data-graph-id]')].map((n) => n.dataset.graphId));
   if (studentView) {
     // Saving while previewing saves the teacher's document, not what students get.
@@ -380,6 +387,7 @@ function cleanNodes(html, attrs = ALLOWED_ATTRS) {
 
 function sanitizeInto(target, html) {
   target.replaceChildren(...cleanNodes(html));
+  markComments(target); // a saved file keeps the class; the role is put back here
 }
 
 function loadNotebook(text, path) {
@@ -408,6 +416,7 @@ async function save(as = false) {
 }
 
 function exportHtml() {
+  settleEquationText();
   const page = `<!doctype html><html lang="en"><head><meta charset="utf-8"><title>${docName.replace(/[<&]/g, '')}</title></head><body>${doc.innerHTML}</body></html>`;
   desktop?.save({ path: null, name: `${docName}.html`, content: page, filters: [{ name: 'Web page', extensions: ['html'] }] })
     .then((p) => p && say(`Exported ${p.split(/[\\/]/).pop()}. Word can open this file.`));
@@ -561,7 +570,7 @@ function wrapLooseInline() {
 }
 
 function documentBlocks(root = doc) {
-  if (root === doc) wrapLooseInline();
+  if (root === doc) { settleEquationText(); wrapLooseInline(); }
   const blocks = [];
   for (const node of root.childNodes) {
     if (node.nodeType === Node.TEXT_NODE) {
@@ -635,7 +644,9 @@ function equationAtCaret() {
   if (hit) return hit;
   const block = currentBlock();
   const all = block ? block.querySelectorAll('.eq') : [];
-  return all.length === 1 && block.classList.contains('eq-line') ? all[0] : null;
+  if (all.length === 1 && block.classList.contains('eq-line')) return all[0];
+  // In the comment after an equation, the equation is the one meant (Ctrl+E, Ctrl+G).
+  return block?.tagName === 'P' ? commentedEquation(block) : null;
 }
 
 function placeCaretAfter(node) {
@@ -677,9 +688,53 @@ function openEquation(target) {
   input.focus();
 }
 
+// The typed maths without its comment (# or // to the end), which goes beside the equation.
 function currentLatex() {
-  const text = $('equation-text').value;
-  return latexMode ? text : plainToLatex(text);
+  const { code } = splitComment($('equation-text').value);
+  return latexMode ? code : plainToLatex(code);
+}
+
+// A comment after an equation: words in the document, never part of the maths. It is marked
+// as a comment (role="comment"), so a screen reader can say "comment" before it.
+function commentSpan(text) {
+  const span = el('span', { class: 'comment', role: 'comment' });
+  if (typeof text === 'string') span.textContent = text; else span.append(text);
+  return span;
+}
+function addComment(after, comment) {
+  if (!comment) return null;
+  const span = commentSpan(comment);
+  after.after(' ', span);
+  return span;
+}
+
+// Comments typed straight after an equation (or in a saved notebook) get the same mark. The
+// text node is moved into the mark, and the cursor typing in it is put back where it was.
+function markComments(root = doc) {
+  for (const span of root.querySelectorAll('span.comment')) span.setAttribute('role', 'comment');
+  for (const eq of root.querySelectorAll('.eq')) {
+    let n = eq.nextSibling;
+    while (n?.nodeType === Node.TEXT_NODE && !n.textContent.trim() && n.nextSibling) n = n.nextSibling;
+    if (n?.nodeType !== Node.TEXT_NODE || n.parentElement?.closest('.comment')) continue;
+    const m = /^(\s*)(#|\/\/|%)/.exec(n.textContent);
+    if (!m) continue;
+    const sel = getSelection();
+    let caret = sel.rangeCount && sel.isCollapsed && sel.anchorNode === n ? sel.anchorOffset : null;
+    if (m[1]) { // the space before it stays outside
+      n = n.splitText(m[1].length);
+      if (caret !== null) caret = caret >= m[1].length ? caret - m[1].length : null;
+    }
+    const span = commentSpan('');
+    n.replaceWith(span);
+    span.append(n);
+    if (caret !== null) {
+      const r = document.createRange();
+      r.setStart(n, caret);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+    }
+  }
 }
 
 function preview() {
@@ -710,6 +765,7 @@ function toggleLatex() {
 function commitEquation() {
   let latex;
   try { latex = currentLatex(); } catch (error) { $('equation-error').textContent = error.message; return; }
+  const { comment } = splitComment($('equation-text').value);
   $('equation-dialog').close();
   if (!latex) return;
   const span = mathSpan(latex, equationTarget?.dataset.display === 'true');
@@ -725,11 +781,12 @@ function commitEquation() {
     range.deleteContents();
     range.insertNode(span);
   }
+  addComment(span, comment);
   doc.focus();
   placeCaretAfter(span);
   tidy();
   setDirty(true);
-  say(`Equation: ${latexToPlain(latex)}`);
+  say(`Equation: ${latexToPlain(latex)}${comment ? `. Comment: ${comment}` : ''}`);
 }
 
 $('equation-text').addEventListener('input', preview);
@@ -763,7 +820,8 @@ function readRange(text, name) {
 function graphSources(text) {
   const out = [];
   let open = '';
-  for (const line of text.split('\n')) {
+  for (const typed of text.split('\n')) {
+    const line = splitComment(typed).code; // y = sin x # a wave: the comment is not graphed
     open = open ? `${open} ${line}` : line;
     if ((open.match(/\\begin\{cases\}/g) || []).length > (open.match(/\\end\{cases\}/g) || []).length) continue;
     // Semicolons still separate plain-text functions, as before.
@@ -885,7 +943,7 @@ function typedToLatex(text) {
 
 function selectionToEquation() {
   const sel = getSelection();
-  const text = sel.toString().trim();
+  const { code: text, comment } = splitComment(sel.toString().trim());
   if (!text) { say('Select the math you typed first, for example x^2 - 4.'); return; }
   let latex;
   try { latex = typedToLatex(text); } catch (error) { say(`Could not convert: ${error.message}`); return; }
@@ -893,23 +951,28 @@ function selectionToEquation() {
   range.deleteContents();
   const span = mathSpan(latex);
   range.insertNode(span);
+  addComment(span, comment);
   placeCaretAfter(span);
   tidy();
   setDirty(true);
-  say(`Converted to an equation: ${latexToPlain(latex)}`);
+  say(`Converted to an equation: ${latexToPlain(latex)}${comment ? `. Comment kept as text: ${comment}` : ''}`);
 }
 
 function lineToEquation() {
   const block = currentBlock();
   if (!block || block.querySelector('.eq') || !block.textContent.trim()) { selectionToEquation(); return; }
   if (getSelection().toString()) { selectionToEquation(); return; }
+  // y = x^2 # the parabola: the maths becomes the equation, the comment stays text after it.
+  const { code, comment } = splitComment(block.textContent);
+  if (!code.trim()) { say('This line is only a comment. Write the maths before the # or //.'); return; }
   let latex;
-  try { latex = typedToLatex(block.textContent); } catch (error) { say(`Could not convert this line: ${error.message}`); return; }
+  try { latex = typedToLatex(code); } catch (error) { say(`Could not convert this line: ${error.message}`); return; }
   const line = equationLine(latex);
+  addComment(line.firstChild, comment);
   block.replaceWith(line);
   placeCaretAfter(line.firstChild);
   setDirty(true);
-  say(`This line is now an equation: ${latexToPlain(latex)}`);
+  say(`This line is now an equation: ${latexToPlain(latex)}${comment ? `. Comment kept as text: ${comment}` : ''}`);
 }
 
 // Ctrl+L: the equation as its LaTeX, as text you can read and change letter by letter;
@@ -932,6 +995,370 @@ function equationToText() {
   placeCaretAfter(text);
   setDirty(true);
   say(`Now plain text: ${text.textContent}`);
+}
+
+// ---------- an interval for the equation (Ctrl+Shift+D): y = sin x, x in [0, 2pi] ----------
+
+let intervalTarget = null;
+
+// The equation's maths without its interval, and the interval as it was typed.
+function withoutInterval(plain) {
+  const domain = splitDomain(plain);
+  if (domain) {
+    const typed = domain.kind === 'interval'
+      ? `${domain.interval.open}${domain.interval.lo}, ${domain.interval.hi}${domain.interval.close}`
+      : domain.inner;
+    return { main: domain.main, typed };
+  }
+  // y = x^2, 0 < x < 1: comparisons after a comma.
+  const parts = plain.split(',');
+  if (parts.length > 1 && parts.slice(1).every((p) => /[<>]/.test(p) && /\bx\b/.test(p))) return { main: parts[0].trim(), typed: parts.slice(1).join(', ').trim() };
+  return { main: plain, typed: '' };
+}
+
+function openInterval() {
+  const eq = equationAtCaret();
+  if (!eq) { say('Move next to an equation first, for example y = sin x.'); return; }
+  intervalTarget = eq;
+  const { main, typed } = withoutInterval(latexToPlain(eq.dataset.latex));
+  $('interval-about').textContent = `For the equation ${main}.`;
+  $('interval-text').value = typed;
+  $('interval-error').textContent = '';
+  $('interval-dialog').showModal();
+  $('interval-text').focus();
+  $('interval-text').select();
+}
+
+// What was typed, as the words the equation gets: [0, 2pi], (0, pi], 0 < x <= pi, "0 to 2pi".
+function intervalText(typed) {
+  let text = typed.trim().replace(/^(x\s*(in|∈)|on|for)\s+/i, '').trim();
+  const to = /^(.+?)\s+to\s+(.+)$/i.exec(text);
+  if (to) text = `[${to[1].trim()}, ${to[2].trim()}]`;
+  if (/^[[(]/.test(text)) return `x in ${text}`;
+  if (/\bx\b/.test(text)) return text;
+  throw new Error('Write the interval with brackets, for example [0, 2pi] or (0, pi], or as 0 < x < pi.');
+}
+
+function commitInterval() {
+  const eq = intervalTarget;
+  if (!eq || !doc.contains(eq)) { $('interval-dialog').close(); return; }
+  const { main } = withoutInterval(latexToPlain(eq.dataset.latex));
+  const typed = $('interval-text').value;
+  let latex;
+  try {
+    if (!typed.trim()) latex = plainToLatex(main);
+    else {
+      const words = intervalText(typed);
+      const range = parseCondition(words); // the same check the graph makes
+      if (range.otherwise) throw new Error('That interval is every x; leave the box empty instead.');
+      latex = plainToLatex(`${main}, ${words}`);
+    }
+  } catch (error) { $('interval-error').textContent = error.message; return; }
+  $('interval-dialog').close();
+  const span = mathSpan(latex, eq.dataset.display === 'true');
+  eq.replaceWith(span);
+  doc.focus();
+  placeCaretAfter(span);
+  setDirty(true);
+  say(typed.trim() ? `Equation: ${latexToPlain(latex)}. Ctrl+G graphs it on this interval.` : `Interval taken away. Equation: ${latexToPlain(latex)}`);
+}
+$('interval-ok').addEventListener('click', (e) => { e.preventDefault(); commitInterval(); });
+$('interval-text').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); commitInterval(); } });
+$('interval-dialog').addEventListener('close', () => { if ($('interval-dialog').returnValue !== 'ok') doc.focus(); });
+
+// ---------- spelling (F7), as in Word ----------
+// The Windows spell checker, through the local server: the same one that draws the red
+// underlines and gives the right-click suggestions. Equations and graph descriptions are not
+// checked, and neither are the names of maths functions written as words (sin, ln, arcsin).
+
+const MATH_WORDS = new Set(['sin', 'cos', 'tan', 'sec', 'csc', 'cot', 'arcsin', 'arccos', 'arctan', 'arcsec', 'arccsc', 'arccot',
+  'sinh', 'cosh', 'tanh', 'asin', 'acos', 'atan', 'ln', 'log', 'exp', 'lim', 'sqrt', 'cbrt', 'dx', 'dy', 'dt', 'du', 'dz', 'inf',
+  'pgfplots', 'latex', 'mathml', 'cdot', 'frac', 'infty', 'quad']);
+const spell = { ignored: new Set(), errors: [], current: null, cursor: null, origin: null, wrapped: false };
+
+// The document's lines as text, with where each text node starts in it. An equation between two
+// pieces of text counts as a space, so the words on each side stay apart.
+function spellLines() {
+  const lines = new Map();
+  let prev = null;
+  for (const node of textNodes()) {
+    if (node.parentElement.closest('.graph-line')) continue;
+    const line = findLine(node);
+    if (!lines.has(line)) { lines.set(line, { line, text: '', parts: [] }); prev = null; }
+    const entry = lines.get(line);
+    if (prev) {
+      const between = document.createRange();
+      between.setStart(prev, prev.length);
+      between.setEnd(node, 0);
+      if (between.cloneContents().querySelector('.eq, br, img')) entry.text += ' ';
+    }
+    entry.parts.push({ node, start: entry.text.length });
+    entry.text += node.textContent;
+    prev = node;
+  }
+  return [...lines.values()];
+}
+
+// A place in a line's text as a place in the document.
+function spellPoint(entry, offset, end) {
+  const part = entry.parts.findLast((p) => (end ? p.start < offset : p.start <= offset)) || entry.parts[0];
+  return [part.node, Math.min(offset - part.start, part.node.length)];
+}
+
+async function checkSpelling() {
+  const lines = spellLines();
+  const { results } = await api('/api/spell', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ texts: lines.map((l) => l.text) }) });
+  const out = [];
+  lines.forEach((entry, i) => {
+    for (const e of results[i] || []) {
+      const word = e.word;
+      if (e.action !== 'delete' && (word.length < 2 || /\d/.test(word) || MATH_WORDS.has(word.toLowerCase()) || spell.ignored.has(word))) continue;
+      const range = document.createRange();
+      range.setStart(...spellPoint(entry, e.start, false));
+      range.setEnd(...spellPoint(entry, e.start + e.length, true));
+      out.push({ ...e, range, line: entry });
+    }
+  });
+  return out;
+}
+
+// The first mistake at or after the cursor; after the end, once more from the top to where it began.
+function nextMistake(errors) {
+  const after = (e, point) => e.range.compareBoundaryPoints(Range.START_TO_START, point) >= 0;
+  const found = errors.find((e) => after(e, spell.cursor) && (!spell.wrapped || !after(e, spell.origin)));
+  if (found || spell.wrapped) return found || null;
+  spell.wrapped = true;
+  spell.cursor = document.createRange();
+  spell.cursor.setStart(doc, 0);
+  return errors.find((e) => !after(e, spell.origin)) || null;
+}
+
+function contextOf(mistake) {
+  const { text } = mistake.line;
+  const from = Math.max(0, text.lastIndexOf(' ', Math.max(0, mistake.start - 50)));
+  const to = text.indexOf(' ', Math.min(text.length, mistake.start + mistake.length + 50));
+  return `${from > 0 ? '…' : ''}${text.slice(from, to < 0 ? text.length : to).trim()}${to >= 0 ? '…' : ''}`;
+}
+
+function describeMistake(m) {
+  return m.action === 'delete' ? `Repeated word: ${m.word}.` : `Not in the dictionary: ${m.word}.`;
+}
+
+async function startSpelling() {
+  const sel = getSelection();
+  spell.origin = document.createRange();
+  if (sel.rangeCount && doc.contains(sel.anchorNode)) spell.origin.setStart(sel.anchorNode, sel.anchorOffset); else spell.origin.setStart(doc, 0);
+  // A word the cursor is in is checked too.
+  spell.origin.collapse(true);
+  spell.cursor = spell.origin.cloneRange();
+  if (spell.origin.startContainer.nodeType === Node.TEXT_NODE) {
+    const t = spell.origin.startContainer.textContent;
+    let o = spell.origin.startOffset;
+    while (o > 0 && /[\p{L}'’]/u.test(t[o - 1])) o -= 1;
+    spell.cursor.setStart(spell.origin.startContainer, o);
+    spell.origin.setStart(spell.origin.startContainer, o);
+  }
+  spell.wrapped = false;
+  await showNextMistake(true);
+}
+
+async function showNextMistake(first = false) {
+  let errors;
+  try { errors = await checkSpelling(); } catch (error) { say(`Spelling cannot be checked: ${error.message}`); if ($('spell-dialog').open) $('spell-dialog').close(); return; }
+  const m = nextMistake(errors);
+  spell.current = m;
+  if (!m) {
+    if ($('spell-dialog').open) $('spell-dialog').close();
+    doc.focus();
+    const sel = getSelection();
+    sel.removeAllRanges();
+    if (doc.contains(spell.origin.startContainer)) sel.addRange(spell.origin.cloneRange());
+    say(first && !errors.length ? 'No spelling mistakes found.' : 'The spelling check is complete.');
+    return;
+  }
+  // The word is marked in the document while the box is open (the box has the keyboard, so it
+  // cannot be selected); closing the box selects it.
+  if (window.Highlight) CSS.highlights.set('spelling', new Highlight(m.range.cloneRange()));
+  m.range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
+  $('spell-word').textContent = describeMistake(m);
+  $('spell-context').textContent = `In: ${contextOf(m)}`;
+  const list = $('spell-suggestions');
+  list.replaceChildren();
+  const options = m.action === 'delete' ? [{ label: `Delete the second "${m.word}"`, value: '' }] : m.suggestions.map((w) => ({ label: w, value: w }));
+  for (const o of options) list.append(el('option', { value: o.value }, o.label));
+  if (!options.length) list.append(el('option', { value: m.word, disabled: '' }, 'No suggestions'));
+  list.selectedIndex = options.length ? 0 : -1;
+  $('spell-to').value = options.length ? options[0].value : m.word;
+  $('spell-change').textContent = m.action === 'delete' ? 'Delete' : 'Change';
+  $('spell-change-all').disabled = m.action === 'delete';
+  $('spell-add').disabled = m.action === 'delete';
+  if (!$('spell-dialog').open) $('spell-dialog').showModal();
+  (options.length ? list : $('spell-to')).focus();
+  // The box's own description is read when it opens; after that, the next word is said here.
+  if (!first) say(`${describeMistake(m)} In: ${contextOf(m)}. ${options.length ? `Suggestion: ${options[0].label}.` : 'No suggestions.'}`);
+}
+
+// Changes the mistake's words in the document; the cursor goes on after the new word.
+function replaceMistake(m, word) {
+  const range = m.range;
+  if (m.action === 'delete') {
+    // The repeated word and the space before it.
+    const node = range.startContainer;
+    if (node.nodeType === Node.TEXT_NODE) {
+      let o = range.startOffset;
+      while (o > 0 && /\s/.test(node.textContent[o - 1])) o -= 1;
+      range.setStart(node, o);
+    }
+  }
+  range.deleteContents();
+  const text = document.createTextNode(word);
+  if (word) range.insertNode(text);
+  const after = document.createRange();
+  if (word) after.setStartAfter(text); else after.setStart(range.startContainer, range.startOffset);
+  after.collapse(true);
+  return after;
+}
+
+async function spellAction(kind) {
+  const m = spell.current;
+  if (!m) return;
+  if (kind === 'change' || kind === 'changeAll') {
+    const word = m.action === 'delete' ? '' : $('spell-to').value.trim();
+    if (m.action !== 'delete' && !word) { say('Write the word to change to first.'); $('spell-to').focus(); return; }
+    if (kind === 'changeAll') {
+      spell.cursor = m.range.cloneRange();
+      spell.cursor.collapse(true);
+      const all = (await checkSpelling()).filter((e) => e.word === m.word && e.action === m.action);
+      for (const e of all.reverse()) replaceMistake(e, word);
+      say(`Changed ${all.length === 1 ? 'one place' : `${all.length} places`}.`);
+    } else spell.cursor = replaceMistake(m, word);
+    doc.normalize();
+    setDirty(true);
+  } else if (kind === 'ignore') {
+    spell.cursor = document.createRange();
+    spell.cursor.setStart(m.range.endContainer, m.range.endOffset);
+  } else if (kind === 'ignoreAll') {
+    spell.ignored.add(m.word);
+  } else if (kind === 'add') {
+    try {
+      await api('/api/spell/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ word: m.word }) });
+    } catch (error) { say(`Could not add the word: ${error.message}`); return; }
+    spell.ignored.add(m.word); // the red underline may take a moment to learn it too
+  }
+  await showNextMistake();
+}
+
+$('spell-suggestions').addEventListener('change', () => { const o = $('spell-suggestions').selectedOptions[0]; if (o && !o.disabled) $('spell-to').value = o.value; });
+$('spell-suggestions').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); spellAction('change'); } });
+$('spell-to').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); spellAction('change'); } });
+$('spell-change').addEventListener('click', () => spellAction('change'));
+$('spell-change-all').addEventListener('click', () => spellAction('changeAll'));
+$('spell-ignore').addEventListener('click', () => spellAction('ignore'));
+$('spell-ignore-all').addEventListener('click', () => spellAction('ignoreAll'));
+$('spell-add').addEventListener('click', () => spellAction('add'));
+// Leaving the box (Escape, Close): back in the document with the word selected. Done here and
+// not on the close event, which can come late (a hidden window waits for its next frame).
+function leaveSpelling() {
+  if ($('spell-dialog').open) $('spell-dialog').close();
+  if (window.Highlight) CSS.highlights.delete('spelling');
+  const m = spell.current;
+  spell.current = null;
+  if (!m) return;
+  doc.focus();
+  const sel = getSelection();
+  sel.removeAllRanges();
+  sel.addRange(m.range.cloneRange());
+}
+$('spell-dialog').addEventListener('cancel', (e) => { e.preventDefault(); leaveSpelling(); });
+$('spell-close').addEventListener('click', (e) => { e.preventDefault(); leaveSpelling(); });
+$('spell-dialog').addEventListener('close', () => { if (!$('spell-dialog').open && spell.current) leaveSpelling(); });
+
+// Alt+F7: the next misspelled word after the cursor is selected and said, without the box.
+async function nextMisspelling() {
+  const sel = getSelection();
+  spell.origin = document.createRange();
+  if (sel.rangeCount && doc.contains(sel.focusNode)) spell.origin.setStart(sel.focusNode, sel.focusOffset); else spell.origin.setStart(doc, 0);
+  spell.origin.collapse(true);
+  spell.cursor = spell.origin.cloneRange();
+  spell.wrapped = false;
+  let errors;
+  try { errors = await checkSpelling(); } catch (error) { say(`Spelling cannot be checked: ${error.message}`); return; }
+  // From the end of the word found last time (the selection's end), so each press goes on.
+  const m = nextMistake(errors);
+  if (!m) { say(errors.length ? 'No other spelling mistakes.' : 'No spelling mistakes found.'); return; }
+  doc.focus();
+  sel.removeAllRanges();
+  const range = m.range.cloneRange();
+  sel.addRange(range);
+  m.range.startContainer.parentElement?.scrollIntoView({ block: 'center' });
+  const tips = m.action === 'delete' ? '' : m.suggestions.length ? ` Suggestions: ${m.suggestions.slice(0, 3).join(', ')}.` : ' No suggestions.';
+  say(`${describeMistake(m)}${tips} The Applications key lists corrections; F7 opens Spelling.`);
+}
+
+// ---------- stepping through an equation with the arrow keys ----------
+// As in Word, the arrow keys go into an equation: there it is its plain text, f(x) = 3 sin(x),
+// so Right and Left move one symbol at a time and typing changes it. When the cursor leaves,
+// it is an equation again, exactly as before if nothing was changed (Settings > Writing).
+
+let openText = null; // { span, latex, plain, display }: the equation being stepped through
+
+// The equation just after the cursor (forward) or just before it.
+function equationNextTo(forward) {
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed || !doc.contains(sel.anchorNode)) return null;
+  const { startContainer: c, startOffset: o } = sel.getRangeAt(0);
+  let n;
+  if (c.nodeType === Node.TEXT_NODE) {
+    if (forward ? o < c.length : o > 0) return null;
+    n = forward ? c.nextSibling : c.previousSibling;
+  } else n = forward ? c.childNodes[o] : c.childNodes[o - 1];
+  while (n?.nodeType === Node.TEXT_NODE && !n.length) n = forward ? n.nextSibling : n.previousSibling;
+  return n?.nodeType === Node.ELEMENT_NODE && n.classList.contains('eq') ? n : null;
+}
+
+function stepIntoEquation(eq, atEnd) {
+  const latex = eq.dataset.latex;
+  const plain = latexToPlain(latex);
+  const span = el('span', { class: 'eq-text' }, plain);
+  eq.replaceWith(span);
+  openText = { span, latex, plain, display: eq.dataset.display === 'true' };
+  const r = document.createRange();
+  r.setStart(span.firstChild, atEnd ? plain.length : 0);
+  r.collapse(true);
+  getSelection().removeAllRanges();
+  getSelection().addRange(r);
+}
+
+// Back to an equation. Returns it (null if it was emptied or is not maths yet).
+function closeEquationText() {
+  const open = openText;
+  openText = null;
+  if (!open || !doc.contains(open.span)) return null;
+  const { span } = open;
+  const text = span.textContent;
+  let latex = open.latex;
+  if (text.trim() !== open.plain.trim()) {
+    if (!text.trim()) { span.remove(); setDirty(true); return null; }
+    try { latex = typedToLatex(splitComment(text).code); } catch (error) {
+      span.replaceWith(document.createTextNode(text));
+      setDirty(true);
+      say(`This is text now, not an equation: ${error.message} Ctrl+Shift+E makes it an equation again.`);
+      return null;
+    }
+    setDirty(true);
+  }
+  const eq = mathSpan(latex, open.display);
+  span.replaceWith(eq);
+  return eq;
+}
+
+// Commands (menus, shortcuts) and saving see equations, never one half-stepped-through: the
+// cursor goes just after it, where it was.
+function settleEquationText() {
+  if (!openText) return;
+  const inside = openText.span.contains(getSelection().anchorNode);
+  const eq = closeEquationText();
+  if (eq && inside) placeCaretAfter(eq);
 }
 
 // ---------- working line by line: the equation above, copied down ----------
@@ -981,7 +1408,20 @@ function endsWithEquation(block) {
   if (block.classList.contains('eq-line')) return Boolean(block.querySelector('.eq'));
   let last = block.lastChild;
   while (last && (last.nodeName === 'BR' || (last.nodeType === Node.TEXT_NODE && /^[\s.,;]*$/.test(last.textContent)))) last = last.previousSibling;
-  return last?.nodeType === Node.ELEMENT_NODE && last.classList.contains('eq');
+  if (last?.nodeType === Node.ELEMENT_NODE && last.classList.contains('eq')) return true;
+  // ... or an equation and then only its comment (y = x^2 # the parabola).
+  return Boolean(commentedEquation(block));
+}
+
+// The equation a line's comment belongs to: its last one, with only "# ..." or "// ..." after it.
+function commentedEquation(block) {
+  const eq = [...block.children].filter((n) => n.classList.contains('eq')).at(-1);
+  if (!eq) return null;
+  const after = document.createRange();
+  after.setStartAfter(eq);
+  after.setEnd(block, block.childNodes.length);
+  if (after.cloneContents().querySelector('.eq, img')) return null;
+  return /^[\s.,;]*(#|\/\/|%)/.test(after.toString()) ? eq : null;
 }
 
 // A new empty line after this one, with the cursor on it.
@@ -1848,9 +2288,12 @@ async function showKeys(section = null) {
       ['Read the line with its maths spelled out', 'Ctrl+Shift+R'], ['Find', 'Ctrl+F'], ['Headings list', 'Ctrl+Shift+H']]],
     ['Equations', [['Make the line (or selection) an equation', 'Ctrl+Shift+E'], ['Insert an equation', 'Alt+='],
       ['Edit the equation', 'Ctrl+E, or Enter before it'], ['New line after an equation', 'Enter after it'],
-      ['Copy the equation above down, to change it', 'F11, or Enter on the blank line under an equation'],
+      ['Copy the equation above down, to change it', 'Shift+Enter or F11'],
+      ['Move through an equation one symbol at a time', 'Right and Left arrows into it'],
       ['Equation back to plain text', 'Ctrl+T or Ctrl+Shift+T'], ['Equation to LaTeX text', 'Ctrl+L'],
       ['Plain text, LaTeX and MathML', 'Ctrl+Shift+M'],
+      ['Interval for the equation, such as [0, 2pi]', 'Ctrl+Shift+D'],
+      ['Comment next to the maths (not part of it)', 'Type # or // after the maths'],
       ['In the equation box: plain text or LaTeX', 'Ctrl+L']]],
     ['Graphs', [['Graph the equation here, or explore the graph here', 'Ctrl+G, or Enter on a graph line'], ['New graph from equations', 'Ctrl+Shift+G']]],
     ['In graph mode', [['Step along the function', 'J and K'], ['Play or stop', 'Space'], ['Next and previous point of interest', 'Period and comma'],
@@ -1862,6 +2305,7 @@ async function showKeys(section = null) {
       ['List item in or out a level, next table cell', 'Tab, Shift+Tab'], ['Heading levels 1 to 3, normal text', 'Ctrl+Alt+1, 2, 3, 0'],
       ['Next and previous heading', 'Ctrl+Page Down, Ctrl+Page Up'], ['Page break', 'Ctrl+Enter'],
       ['Spelling suggestions on a misspelled word', 'Applications key']]],
+    ['Spelling', [['Check spelling, as in Word', 'F7'], ['Next misspelled word', 'Alt+F7'], ['Corrections for the word', 'Applications key']]],
   ];
   for (const [name, rows] of extra) table(name, rows, name === 'In graph mode' ? 'keys-graph' : null);
   // Then every menu, as the menu bar has it. A command with no key of its own says where it is.
@@ -2090,7 +2534,7 @@ async function openSettings(section) {
   $('settings-error').textContent = '';
   $('settings-dialog').showModal();
   const installed = savedSettings.ai_installed !== false;
-  const first = { sound: 'set-sound_profile', writing: 'set-enter_copies_equation', ai: installed ? 'set-use_ai' : null, reading: installed && $('set-use_ai').checked ? 'set-reading_method' : 'set-pages_at_once' }[section];
+  const first = { sound: 'set-sound_profile', writing: 'set-step_into_equations', ai: installed ? 'set-use_ai' : null, reading: installed && $('set-use_ai').checked ? 'set-reading_method' : 'set-pages_at_once' }[section];
   (first ? $(first) : $('settings-save')).focus();
 }
 
@@ -2221,7 +2665,28 @@ $('sound-guide-open').addEventListener('click', () => openSoundGuide(settingsFro
 // ---------- keys inside the document ----------
 
 doc.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
+  const plainKey = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+  // Right and Left go into an equation, one symbol at a time (Settings > Writing).
+  if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && plainKey && !openText && savedSettings?.values?.step_into_equations !== false) {
+    const eq = equationNextTo(e.key === 'ArrowRight');
+    if (eq) { e.preventDefault(); stepIntoEquation(eq, e.key === 'ArrowLeft'); return; }
+  }
+  // Enter in an equation being stepped through: it is an equation again, and a new line follows.
+  if (e.key === 'Enter' && plainKey && openText?.span.contains(getSelection().anchorNode)) {
+    e.preventDefault();
+    const eq = closeEquationText();
+    const block = eq ? blockOf(eq) : currentBlock();
+    if (block) newLineAfter(block);
+    return;
+  }
+  // Shift+Enter: the last equation above comes down to the next line, ready to change (as F11).
+  if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey) {
+    e.preventDefault();
+    settleEquationText();
+    copyEquationDown();
+    return;
+  }
+  if (e.key === 'Enter' && plainKey) {
     // Enter on a graph line explores it; on an equation line it edits the equation.
     // Next to an equation inside text, Enter is a normal new line (Ctrl+E edits).
     const block = currentBlock();
@@ -2233,14 +2698,7 @@ doc.addEventListener('keydown', (e) => {
       if (eq && caretAfter(eq)) { e.preventDefault(); newLineAfter(block); return; }
       if (eq) { e.preventDefault(); openEquation(eq); return; }
     }
-    // Enter again on the blank line under an equation: the equation comes down to the next
-    // line, with this line left blank between them (Settings > Writing can turn this off).
-    if (savedSettings?.values?.enter_copies_equation !== false && isBlankLine(block) && endsWithEquation(block.previousElementSibling)) {
-      e.preventDefault();
-      newLineAfter(block);
-      copyEquationDown();
-      return;
-    }
+    // Enter elsewhere is always a new line; Shift+Enter (or F11) copies the equation above down.
   }
   // Up and Down from a blank line or an equation line onto a line that is only an equation:
   // Chromium's caret does not go there by itself (it stays put), so it is moved here.
@@ -2306,6 +2764,8 @@ doc.addEventListener('input', (e) => {
     freshLine(block?.previousElementSibling);
   }
   tidy();
+  const line = currentBlock();
+  if (line?.querySelector?.('.eq')) markComments(line);
 });
 doc.addEventListener('click', (e) => {
   const eq = e.target.closest?.('.eq');
@@ -2374,6 +2834,9 @@ const COMMANDS = {
   graphNextFunction: () => graphCommand('function'),
   graphClose: () => graphCommand('close'),
   copyEquationDown,
+  interval: openInterval,
+  spelling: startSpelling,
+  nextMisspelling,
   soundGuide: () => openSoundGuide(),
   settingsWriting: () => openSettings('writing'),
   graphSlope: () => graphCommand('slope'),
@@ -2418,6 +2881,7 @@ const DOCUMENT_KEYS = {
   'Ctrl+Alt+0': 'normalText', 'Ctrl+Shift+E': 'toEquation', 'Ctrl+E': 'editEquation', 'Alt+=': 'insertEquation', 'Ctrl+F': 'find',
   'Ctrl+H': 'replace', F3: 'findNext', 'Shift+F3': 'findPrevious', 'Ctrl+Shift+M': 'convertMath', 'Ctrl+Shift+W': 'exportDocx',
   F1: 'keys', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', 'Ctrl+F9': 'hideWords', 'Ctrl+Shift+F9': 'hideLine', 'Ctrl+Shift+V': 'pastePlain', F11: 'copyEquationDown', 'Ctrl+T': 'toPlainText', 'Ctrl+Shift+T': 'toPlainText', 'Ctrl+L': 'toLatexText', 'Ctrl+PageDown': 'nextHeading', 'Ctrl+PageUp': 'previousHeading', 'Ctrl+Shift+H': 'headingList',
+  'Ctrl+Shift+D': 'interval', F7: 'spelling', 'Alt+F7': 'nextMisspelling',
 };
 
 // Without the desktop menu bar (tests in a plain browser), the menu's other shortcuts work here too.
@@ -2432,6 +2896,7 @@ const FALLBACK_KEYS = {
 
 function run(name) {
   const command = COMMANDS[name];
+  if (command && !document.querySelector('dialog[open]')) settleEquationText();
   // While a dialog is open its own keys win: Ctrl+Enter there is the dialog's, not a page
   // break, and Ctrl+B in the Find box must not make the document bold.
   if (command && document.querySelector('dialog[open]') && name !== 'keys') return;
@@ -2441,6 +2906,7 @@ function run(name) {
 window.runCommand = run; // used by the desktop bridge and by tests
 window.notebookImport = importPdf; // used by tests
 desktop?.onCommand(run);
+window.serializeNotebook = serialize; // used by tests
 window.isDirty = () => dirty; // asked by the desktop window before it closes
 window.saveForClose = async () => { await save(false); return !dirty; };
 
@@ -2453,6 +2919,8 @@ document.execCommand('defaultParagraphSeparator', false, 'p');
 // just after the equation.
 document.addEventListener('selectionchange', () => {
   const sel = getSelection();
+  // The cursor has left the equation it was stepping through: it is an equation again.
+  if (openText && sel.rangeCount && !openText.span.contains(sel.anchorNode) && document.activeElement === doc) closeEquationText();
   if (!sel.rangeCount || !sel.isCollapsed) return;
   // Only while typing in the document: moving the selection would also move the keyboard
   // focus back into it, away from graph mode or a dialog.

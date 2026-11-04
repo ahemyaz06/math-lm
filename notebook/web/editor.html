@@ -78,7 +78,51 @@
     <p id="equation-error" class="error" role="alert"></p>
     <div id="equation-preview" class="math-display" aria-hidden="true"></div>
     <template class="dialog-help"><p>Type the equation as plain text, for example (x^2 - 4)/(x - 2) or sqrt(x+1), or as LaTeX.</p>
+      <p>An interval after the maths limits where it applies and where it is graphed: y = sin x, [0, 2pi], or y = sin x on (0, pi], or y = x^2 for 0 &lt; x &lt; 1.
+        A comment after # or // stays as words beside the equation and is never part of the maths: y = x^2 # the parabola.</p>
       <p>Enter saves. Ctrl+L switches between plain text and LaTeX. Escape cancels.</p></template>
+  </form>
+</dialog>
+
+<dialog id="interval-dialog" aria-labelledby="interval-title" aria-describedby="interval-about">
+  <h2 id="interval-title">Interval</h2>
+  <form method="dialog" id="interval-form">
+    <p id="interval-about"></p>
+    <label for="interval-text">Interval for x</label>
+    <input id="interval-text" autocomplete="off" spellcheck="false">
+    <p id="interval-error" class="error" role="alert"></p>
+    <div class="buttons">
+      <button value="ok" id="interval-ok">OK</button>
+      <button value="cancel" formnovalidate>Cancel</button>
+    </div>
+    <template class="dialog-help"><p>Write where the equation applies, for example [0, 2pi], (0, pi], [0, inf), 0 to 2pi, or 0 &lt; x &lt;= pi.
+        A square bracket includes that end and a round one leaves it out. Leave it empty to take the interval away.</p>
+      <p>The graph (Ctrl+G) then shows only that interval, with a solid or open dot at each end.
+        You can also type the interval straight into an equation: y = sin x, [0, 2pi], or y = sin x on [0, 2pi], or y = x^2 for 0 &lt; x &lt; 1.</p></template>
+  </form>
+</dialog>
+
+<dialog id="spell-dialog" aria-labelledby="spell-title" aria-describedby="spell-word spell-context">
+  <h2 id="spell-title">Spelling</h2>
+  <form method="dialog" id="spell-form">
+    <p id="spell-word"></p>
+    <p id="spell-context"></p>
+    <label for="spell-suggestions">Suggestions</label>
+    <select id="spell-suggestions" size="6"></select>
+    <label for="spell-to">Change to</label>
+    <input id="spell-to" autocomplete="off">
+    <div class="buttons">
+      <button type="button" id="spell-change">Change</button>
+      <button type="button" id="spell-change-all">Change all</button>
+      <button type="button" id="spell-ignore">Ignore once</button>
+      <button type="button" id="spell-ignore-all">Ignore all</button>
+      <button type="button" id="spell-add">Add to dictionary</button>
+      <button value="close" id="spell-close" formnovalidate>Close</button>
+    </div>
+    <template class="dialog-help"><p>Each word that is not in the dictionary is said with its line. Choose a suggestion with the arrow keys and press Enter to change the word, or Tab to the buttons.
+        Change to holds the word that Change puts in; you can type your own there and press Enter.</p>
+      <p>Ignore once skips this place; Ignore all skips the word until the notebook is closed; Add to dictionary keeps it for good (it is the Windows dictionary, so Word and Edge learn it too).
+        Equations and graph descriptions are not checked; comments next to equations are. Alt+F7 in the document goes to the next misspelled word without this box.</p></template>
   </form>
 </dialog>
 
@@ -94,7 +138,8 @@
     <p id="graph-error" class="error" role="alert"></p>
     <template class="dialog-help"><p>Write each function of x on its own line, in plain text or LaTeX, for example x^2 - 4 or \frac{1}{x}.
         A piecewise function is written as \begin{cases} ... \end{cases}. pgfplots code from a .tex file works too.</p>
-      <p>x from and to: for example -5, 5. Left empty, the range is chosen to show every hole and jump.
+      <p>A function can have its own interval: sin x, [0, 2pi], or tan x on (-pi/2, pi/2). Anything after # or // on a line is a comment and is not graphed.</p>
+      <p>x from and to: for example -5, 5. Left empty, the range is chosen to show every hole and jump, or to fit the functions' intervals.
         y from and to: left empty, it fits the graph.</p>
       <p>Ctrl+Enter inserts the graph. Escape cancels. On an equation in the document, Ctrl+G graphs it directly.</p></template>
   </form>
@@ -245,7 +290,8 @@
     </fieldset>
     <fieldset id="settings-writing">
       <legend>Writing</legend>
-      <label><input type="checkbox" id="set-enter_copies_equation" name="enter_copies_equation"> Enter on the empty line below an equation copies the equation down, leaving that line blank (F11 copies it any time)</label>
+      <label><input type="checkbox" id="set-step_into_equations" name="step_into_equations"> Right and Left arrows go into an equation and move through it one symbol at a time, as plain text you can change</label>
+      <label><input type="checkbox" id="set-check_updates" name="check_updates"> Check for a newer version when Math Notebook starts (asks GitHub once; nothing is downloaded; Help, Check for updates asks any time)</label>
       <label><input type="checkbox" id="set-say_equations" name="say_equations"> Say an equation when the cursor comes to it (in focus mode NVDA reads only its start)</label>
     </fieldset>
     <fieldset id="settings-sound">

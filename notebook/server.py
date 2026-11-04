@@ -11,6 +11,7 @@ import webbrowser
 import attachments
 import notebook_core as core
 import settings as app_settings
+import spelling
 
 WEB = core.ROOT / 'web'
 SOUND = core.ROOT.parent / 'sound-lab' / 'public'
@@ -155,6 +156,24 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ['api', 'settings', 'reset']:
             app_settings.reset()
             return self._send(200, settings_payload())
+        if parts in (['api', 'spell'], ['api', 'spell', 'add']):
+            # Spelling (F7): the Windows spell checker, the one the red underlines use.
+            try:
+                request = json.loads(body.decode('utf-8') or '{}')
+                if parts[-1] == 'add':
+                    word = str(request['word']).strip()
+                    if not word or len(word) > 100 or any(c.isspace() for c in word):
+                        return self._error(400, 'Add one word at a time.')
+                    spelling.add(word)
+                    return self._send(200, {'added': word})
+                texts = request['texts']
+                if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts):
+                    return self._error(400, 'The request was not understood.')
+                return self._send(200, {'results': spelling.check(texts)})
+            except (ValueError, UnicodeDecodeError, KeyError):
+                return self._error(400, 'The request was not understood.')
+            except OSError as exc:
+                return self._error(503, str(exc) or 'The Windows spell checker is not available.')
         try:
             if parts == ['api', 'attach']:
                 # An exported PDF gets its notebook attached (a standard PDF attachment).

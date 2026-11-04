@@ -5,7 +5,25 @@ used from the keyboard. Write notes and homework like in Word, with every equati
 real maths that NVDA and MathCAT read aloud. Open course PDFs and LaTeX files. Explore graphs
 by sound. Hand in Word or PDF files that everyone else can open.
 
-Everything runs on your own computer. Nothing is sent anywhere.
+Everything runs on your own computer. Nothing is sent anywhere, except one question to GitHub
+when you check for a newer version (below). It is a personal project of
+one student, made for one calculus course first; see "What is tested and what is not" before
+relying on it.
+
+## In this README
+
+Each section in a sentence; the details follow in the same order.
+
+- **What is in this repository**: three folders. The notebook is the app; the two labs are parts it uses.
+- **Download it (Windows)**: a setup or a portable zip from Releases, and the Windows warnings
+  you will see because the app is not code-signed.
+- **Running from this folder**: what to install to run it from the source code.
+- **First minutes in the notebook**: the keys for writing, equations, comments, intervals,
+  spelling and graphs.
+- **The optional AI add-on**: only for describing pictures; how to add it.
+- **What is tested and what is not**: what the automatic tests check, what has been heard with
+  NVDA, and what has not been tried.
+- **Privacy and safety**, **Licence**.
 
 ## What is in this repository
 
@@ -17,7 +35,14 @@ Everything runs on your own computer. Nothing is sent anywhere.
 
 The notebook needs the other two folders, so keep them together.
 
-## The quickest start: download it (Windows)
+## Download it (Windows)
+
+**This is a beta.** The app is still being built and is updated often; things may change,
+and some parts are not finished or fully tested (see "What is tested and what is not").
+Help > Check for updates asks GitHub whether a newer version is out and offers its download
+page; Settings > Writing can do this each time the app starts (off unless you turn it on).
+Nothing is downloaded or installed by itself: a newer setup is run by you, installs over the
+old one and keeps your settings.
 
 This repository's **Releases** page has two ways to get the same app. Neither has the AI
 add-on, which only matters for describing pictures.
@@ -32,6 +57,7 @@ add-on, which only matters for describing pictures.
 The app is not code-signed, so Windows may warn before it runs the setup or the exe.
 SmartScreen's "Windows protected your PC": choose "More info", then "Run anyway". An "Open
 File - Security Warning" dialog ("The publisher could not be verified"): choose "Run".
+`SHA256SUMS.txt` in each release lets you check that the files are the ones published.
 
 ## Running from this folder (Windows)
 
@@ -54,9 +80,17 @@ File - Security Warning" dialog ("The publisher could not be verified"): choose 
   menus, **F1** lists every keyboard shortcut. In a dialog, F1 or its **Help** button explains it.
 - Type maths as plain text, such as `(x^2 - 4)/(x - 2)`, and press **Ctrl+Shift+E** to make it
   an equation. **Ctrl+Shift+R** reads the current line with its maths spelled out.
-- Working line by line: **Enter** after an equation starts a new line; **Enter** again copies
-  the equation down (with a blank line between), ready to change with **Ctrl+E**. **F11**
-  copies the equation above down at any time.
+- **Right arrow** into an equation shows it as its plain text: the arrows move one symbol at a
+  time and you can type to change it. When you leave it, it is an equation again.
+- Working line by line: **Enter** after an equation starts a new line. **Shift+Enter** (or
+  **F11**) copies the equation above down, ready to change.
+- Comments, as in programming: anything after `#` or `//` stays words beside the equation and
+  never becomes maths: `y = x^2 # the parabola`.
+- Intervals, as written in class: `y = sin x, [0, 2pi]`, `y = sin x on (0, pi]`,
+  `y = x^2 for 0 < x < 1`. On an equation, **Ctrl+Shift+D** adds or changes its interval. Its
+  graph is then only on that interval, with solid and open dots at the ends.
+- **F7** checks spelling, as in Word, with the Windows spell checker; **Alt+F7** goes to the
+  next misspelled word. Equations are not checked.
 - **Ctrl+Shift+G** inserts a graph. On an equation, **Ctrl+G** graphs it. In graph mode:
   - **J** and **K** step along the curve; **Space** plays it;
   - **period** and **comma** jump between points of interest (zeros, peaks, holes, corners, dots);
@@ -85,10 +119,32 @@ recognition-lab\.venv\Scripts\python.exe recognition-lab\download_qwen35_9b.py
 The first gets the llama.cpp runner and Qwen3-VL-8B; the second adds Qwen3.5-9B, which reads
 better. Then choose the reading model in the notebook's Settings > Reading PDFs.
 
+## What is tested and what is not
+
+- **Automatic tests** drive the real app with key presses and check what it does and says
+  in its status line. They also check the maths conversions, graphs, Word equations, PDF
+  reading, the portable copy and the installed copy. They cannot hear a screen reader.
+- **Heard with NVDA** by the author: writing, equations in focus and browse mode, stepping
+  through an equation, intervals, graph mode and its sounds.
+- **Not yet heard with NVDA**: whether the word "comment" is said before a comment, the
+  Spelling box (F7), the Interval box (Ctrl+Shift+D), the setup's own pages, and the newer
+  graph sounds (the instrument, beep and game voices, and "clearer pitch").
+- **Tried on one computer only**: Windows 11 with NVDA, MathCAT and Access8Math, US English.
+  Other screen readers (JAWS, Narrator), other languages, and macOS or Linux have not been tried.
+- **Course material**: the PDF reader was built and checked on one calculus course's LaTeX
+  PDFs and a few textbooks. PDFs made other ways (Word, scans) are less sure, and an
+  unusual layout can be read wrongly without a warning.
+- The full list is in the guide's "Limits, and what is not tested".
+
 ## Privacy and safety
 
 - The apps listen only on this computer (127.0.0.1) and refuse requests from other websites.
 - Opened documents and pasted text can never run code: they pass an allow-list cleaner.
+- The app goes online only to check for a newer version: when you choose Help > Check for
+  updates, or at each start if you turned that on in Settings > Writing. It asks GitHub's public
+  "latest release" address once; nothing about you or your documents is sent.
+- Spelling uses Windows' own spell checker on this computer; Add to dictionary adds the word
+  to your Windows dictionary, which Word and Edge use too.
 - Settings and read PDFs stay in `%LOCALAPPDATA%\MathNotebook`. Your own file locations (model
   files, a PDF folder) can go in `local-paths.json` in this folder; git leaves that file out.
 

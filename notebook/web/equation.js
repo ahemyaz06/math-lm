@@ -232,7 +232,107 @@ function toLatex(n) {
 export function plainToLatex(text) {
   const source = text.trim();
   if (!source) return '';
+  const domain = splitDomain(source);
+  if (domain) return `${plainToLatex(domain.main)}, \\quad ${domainLatex(domain)}`;
+  // An interval on its own: x in [0, 2pi).
+  const alone = /^x\s*(in|∈)/i.test(source) && intervalCondition(source) && trailingInterval(source.replace(/∈/g, ' in '));
+  if (alone) return domainLatex({ kind: 'interval', interval: alone });
   return toLatex(new Parser(source).parse()).replace(/\s+/g, ' ').trim();
+}
+
+// ---------- comments: words next to the maths that never become maths ----------
+// As in programming, everything from # or // to the end is a comment: y = x^2 # the parabola.
+// In LaTeX, % starts a comment too (as it does in a .tex file); \# and \% are the signs themselves.
+export function splitComment(text) {
+  const latex = /\\[A-Za-z]|[_^]\{/.test(text);
+  const m = (latex ? /(?<!\\)(#|\/\/|%)/ : /#|\/\//).exec(text);
+  if (!m) return { code: text, comment: '' };
+  return { code: text.slice(0, m.index).trimEnd(), comment: text.slice(m.index).trim() };
+}
+
+// ---------- where a function applies: an interval after it ----------
+// y = sin x, [0, 2pi]     y = sin x on [0, 2pi)     y = sin x, x in (0, pi]     y = x^2 for 0 < x < 1
+// y = x^2 {0 < x < 1}. (y = x^2, 0 < x < 1 was already a list the parser reads.)
+// A square bracket keeps that end, a round one leaves it out, as in class.
+
+const IS_INF = /^[+]?(inf|infinity|∞)$/i;
+const IS_MINUS_INF = /^-\s*(inf|infinity|∞)$/i;
+
+// The interval at the very end of the text: its brackets may differ, [0, 2pi), and its ends may
+// have brackets of their own, [(-pi)/2, pi/2].
+function trailingInterval(text) {
+  const t = text.trimEnd();
+  if (!/[\])]$/.test(t)) return null;
+  let depth = 0, comma = -1, commas = 0;
+  for (let i = t.length - 1; i >= 0; i -= 1) {
+    const ch = t[i];
+    if (ch === ')' || ch === ']') depth += 1;
+    else if (ch === '(' || ch === '[') {
+      depth -= 1;
+      if (depth === 0) {
+        if (commas !== 1) return null;
+        return { before: t.slice(0, i), open: ch, close: t.at(-1), lo: t.slice(i + 1, comma).trim(), hi: t.slice(comma + 1, -1).trim() };
+      }
+    } else if (ch === ',' && depth === 1) { commas += 1; comma = i; }
+  }
+  return null;
+}
+
+// "x in [a, b)" (or just "[a, b)") as the comparisons a <= x < b; null when it is not one.
+export function intervalCondition(text) {
+  const words = text.replace(/∈/g, ' in ').trim();
+  const found = trailingInterval(words);
+  if (!found || !found.lo || !found.hi || !/^\s*((x\s*)?in\s*)?$/i.test(found.before)) return null;
+  return intervalWords(found);
+}
+
+function intervalWords({ open, close, lo, hi }) {
+  if (IS_INF.test(lo) || IS_MINUS_INF.test(hi)) throw new Error(`The interval ${open}${lo}, ${hi}${close} is written backwards: the smaller end comes first.`);
+  const parts = [];
+  if (!IS_MINUS_INF.test(lo)) parts.push(`${lo} ${open === '[' ? '<=' : '<'} x`);
+  if (!IS_INF.test(hi)) parts.push(`x ${close === ']' ? '<=' : '<'} ${hi}`);
+  // [a, inf) is a <= x; (-inf, inf) is every x.
+  return parts.length === 2 ? `${lo} ${open === '[' ? '<=' : '<'} x ${close === ']' ? '<=' : '<'} ${hi}` : parts[0] || 'otherwise';
+}
+
+// The function and where it applies, from plain text; null when the text has no interval.
+// Returns { main, condition (comparisons of x, or 'otherwise'), kind, interval }.
+export function splitDomain(text) {
+  const source = text.replace(/∈/g, ' in ').trim();
+  // {0 < x < 1} after the function.
+  const braces = /^(.*\S)\s*,?\s*\{([^{}]*)\}$/.exec(source);
+  if (braces && /=/.test(braces[1]) && /\bx\b/.test(braces[2])) {
+    const inner = braces[2].trim();
+    const main = braces[1].trim().replace(/,$/, '');
+    const interval = intervalCondition(inner) && trailingInterval(inner);
+    if (interval) return { main, condition: intervalWords(interval), kind: 'interval', interval };
+    return { main, condition: inner, kind: 'braces', inner };
+  }
+  // ... [a, b], ... on [a, b], ... x in [a, b], ... for x in (a, b).
+  const found = trailingInterval(source);
+  if (found && found.lo && found.hi) {
+    const m = /^(.*?\S)\s*(,)?\s*(?:\b(on|for|when|where|if)\b\s*)?(\bx\s*in\b\s*)?$/i.exec(found.before);
+    // A bare (a, b) after a comma could be a point, so it needs "on" or "x in"; [a, b] cannot.
+    if (m && /=/.test(m[1]) && (m[3] || m[4] || (m[2] && (found.open === '[' || found.close === ']')))) {
+      return { main: m[1].replace(/,$/, '').trim(), condition: intervalWords(found), kind: 'interval', interval: found };
+    }
+  }
+  // ... for 0 < x < 1 (also when, where, if).
+  const words = /^(.*?\S)\s*,?\s*\b(for|when|where|if)\b\s+(.*\bx\b.*)$/i.exec(source);
+  if (words && /=/.test(words[1]) && /[<>]|<=|>=|!=|≤|≥|≠/.test(words[3])) {
+    return { main: words[1].trim(), condition: words[3].trim(), kind: 'words', word: words[2].toLowerCase(), inner: words[3].trim() };
+  }
+  return null;
+}
+
+function domainLatex(domain) {
+  if (domain.kind === 'interval') {
+    const { open, close, lo, hi } = domain.interval;
+    const end = (v) => (IS_INF.test(v) ? '\\infty' : IS_MINUS_INF.test(v) ? '-\\infty' : plainToLatex(v));
+    return `x \\in ${open}${end(lo)}, ${end(hi)}${close}`;
+  }
+  if (domain.kind === 'words') return `\\text{${domain.word} } ${plainToLatex(domain.inner)}`;
+  return plainToLatex(domain.inner);
 }
 
 // The parsed form of plain-text maths (used by the graphs, which evaluate it).

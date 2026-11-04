@@ -114,3 +114,16 @@ dialog.wide { width: min(92vw, 52rem); max-height: 88vh; overflow-y: auto; }
 #keys-body td, #keys-body th { border-bottom: 1px solid var(--line); padding: .2rem .5rem; text-align: left; }
 @media print { .toolbar { display: none !important; } }
 .guide-item p { margin: .2rem 0 .8rem; }
+/* The word the Spelling box (F7) is on. */
+::highlight(spelling) { background: #ffe066; color: #000; text-decoration: underline wavy #c00; }
+/* Letters in equations: real letters (x, not the maths letter 𝑥), so NVDA reads them plainly in
+   focus mode; the italics come from the font style instead (mathSpan in editor.js). */
+math mi { text-transform: none; }
+math mi.tml-italic { font-style: italic; }
+/* An equation being stepped through with the arrow keys, as its plain text. */
+.eq-text { font-family: Consolas, monospace; background: #eef3ff; outline: 1px dashed #6a8fd8; border-radius: 3px; padding: 0 2px; }
+/* A comment next to an equation (# or //): words, not maths. */
+.comment { color: #555; font-style: italic; }
+/* NVDA does not say the comment role, so the word is given to screen readers here: nothing is
+   shown, "comment," is read before the comment (CSS alternative text). */
+.comment::before { content: "" / "comment, "; }

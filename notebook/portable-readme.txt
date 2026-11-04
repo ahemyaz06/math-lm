@@ -29,9 +29,20 @@ MATHS
 Type maths as plain text, for example (x^2 - 4)/(x - 2), select it, and press
 Ctrl+Shift+E: it becomes a real equation. Alt+= inserts an equation. Ctrl+E on an
 equation edits it as plain text; Ctrl+L there switches to LaTeX.
-Working line by line: Enter after an equation starts a new line; Enter again copies the
-equation down (with a blank line between), ready to change with Ctrl+E. F11 copies the
-equation above down at any time.
+Working line by line: Enter after an equation starts a new line. Shift+Enter (or F11)
+copies the equation above down, ready to change.
+Right arrow into an equation shows it as plain text: the arrows then move one symbol at a
+time and you can type to change it; when you leave it, it is an equation again.
+Comments: anything after # or // beside an equation stays words, never maths
+(y = x^2 # the parabola). Intervals: y = sin x, [0, 2pi] or y = sin x on (0, pi]; on an
+equation, Ctrl+Shift+D adds or changes its interval, and its graph is only there.
+F7 checks spelling as in Word (the Windows spell checker); Alt+F7 goes to the next mistake.
+
+THIS IS A BETA
+Math Notebook is still being built and is updated often. Help > Check for updates asks
+GitHub whether a newer version is out (Settings > Writing can do it at each start; it is off
+unless you turn it on). Nothing is downloaded by itself: unzip the new version yourself and
+copy your "data" folder into it to keep your settings.
 Ctrl+T turns an equation back into plain text, Ctrl+L into LaTeX text; Ctrl+Shift+E makes
 it an equation again. When the cursor comes to an equation it is said as plain text (in
 focus mode NVDA reads only its start; NVDA+Space and MathCAT read it whole).
