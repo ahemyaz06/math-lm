@@ -63,6 +63,8 @@ def _spec():
         'slope_sound': (False, [True, False]),
         # Writing: Enter on the empty line below an equation copies that equation down (with a blank line between)
         'enter_copies_equation': (True, [True, False]),
+        # Writing: say an equation as plain text when the cursor comes to it (NVDA's focus mode reads only its start)
+        'say_equations': (True, [True, False]),
         'bass_mode': ('x-and-y', ['x-and-y', 'x-only', 'y-only', 'off']),
         'step': (0.5, [0.1, 0.25, 0.5, 1]),
         'play_speed_ms': (400, [800, 400, 250, 150]),

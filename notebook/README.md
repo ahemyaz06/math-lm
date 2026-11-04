@@ -69,7 +69,11 @@ current line with equations spelled out.
   result updates as you type; a preview below it can be read with MathCAT; Enter copies
   the result and "Insert as equation" puts it in the document.
 - Ctrl+Shift+R reads the current line with equations spelled out as plain text.
-  Ctrl+Shift+T turns an equation back into plain text.
+  Ctrl+T (or Ctrl+Shift+T) turns an equation back into plain text, Ctrl+L into its LaTeX
+  text; Ctrl+Shift+E makes either one an equation again.
+- In focus mode NVDA reads only the start of an equation (MathCAT reads it whole in browse
+  mode, NVDA+Space). So when the cursor comes to an equation, the notebook says it as plain
+  text ("Equation: x = log(3^x)"). Settings > Writing can turn this off.
 - All conversions are rules, not AI (`web/equation.js`, `web/mathml.js`). The Word
   equations were checked in Word itself against Microsoft's own converter on 119
   equations (`test-fixtures/math/latex-cases.txt`).
@@ -188,7 +192,8 @@ everything back. Settings are saved in `%LOCALAPPDATA%\MathNotebook\settings.jso
 - Reading PDFs (from Recognition Lab and the reader): how pages are read (above);
   describe pictures with AI; estimate numbers from graph pictures; the reading model;
   a second model that re-reads AI pages with review notes; pages read at the same time.
-- Writing: Enter on the blank line under an equation copies it down (on by default).
+- Writing: Enter on the blank line under an equation copies it down; an equation is said
+  when the cursor comes to it (both on by default).
 - Graph sound (from Sound Lab): the sound (Gentle by default; also instruments, beeps and game
   sounds, each heard as you move through the list, and Listen plays a whole example), clearer
   pitch (notes slide from the last height; off is the original sound), the slope sound, the bass

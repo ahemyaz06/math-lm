@@ -32,6 +32,9 @@ equation edits it as plain text; Ctrl+L there switches to LaTeX.
 Working line by line: Enter after an equation starts a new line; Enter again copies the
 equation down (with a blank line between), ready to change with Ctrl+E. F11 copies the
 equation above down at any time.
+Ctrl+T turns an equation back into plain text, Ctrl+L into LaTeX text; Ctrl+Shift+E makes
+it an equation again. When the cursor comes to an equation it is said as plain text (in
+focus mode NVDA reads only its start; NVDA+Space and MathCAT read it whole).
 Ctrl+Shift+M converts between plain text, LaTeX and MathML (both ways), with a preview
 you can read with MathCAT. Ctrl+Shift+R reads the current line with equations spelled out.
 

@@ -20,7 +20,9 @@ let importing = null;
 
 // ---------- small helpers ----------
 
+let lastSaid = { text: '', at: 0 };
 function say(text) {
+  lastSaid = { text, at: Date.now() };
   $('status').textContent = '';
   setTimeout(() => { $('status').textContent = text; }, 30);
 }
@@ -870,12 +872,23 @@ function spoken(block) {
 
 // ---------- converting typed text ----------
 
+// Typed maths as LaTeX: plain text (x^2/2) is converted; LaTeX text (\frac{x^2}{2}, from
+// Ctrl+L) is kept as it is, once it is checked to be LaTeX that can be shown.
+function typedToLatex(text) {
+  const source = text.trim();
+  if (/\\[A-Za-z]|[_^]\{/.test(source)) {
+    try { temml.renderToString(source, { throwOnError: true }); } catch (error) { throw new Error(`This LaTeX has a mistake: ${String(error.message).replace(/^Temml parse error:\s*/i, '')}`); }
+    return source;
+  }
+  return plainToLatex(source);
+}
+
 function selectionToEquation() {
   const sel = getSelection();
   const text = sel.toString().trim();
   if (!text) { say('Select the math you typed first, for example x^2 - 4.'); return; }
   let latex;
-  try { latex = plainToLatex(text); } catch (error) { say(`Could not convert: ${error.message}`); return; }
+  try { latex = typedToLatex(text); } catch (error) { say(`Could not convert: ${error.message}`); return; }
   const range = sel.getRangeAt(0);
   range.deleteContents();
   const span = mathSpan(latex);
@@ -891,12 +904,24 @@ function lineToEquation() {
   if (!block || block.querySelector('.eq') || !block.textContent.trim()) { selectionToEquation(); return; }
   if (getSelection().toString()) { selectionToEquation(); return; }
   let latex;
-  try { latex = plainToLatex(block.textContent); } catch (error) { say(`Could not convert this line: ${error.message}`); return; }
+  try { latex = typedToLatex(block.textContent); } catch (error) { say(`Could not convert this line: ${error.message}`); return; }
   const line = equationLine(latex);
   block.replaceWith(line);
   placeCaretAfter(line.firstChild);
   setDirty(true);
   say(`This line is now an equation: ${latexToPlain(latex)}`);
+}
+
+// Ctrl+L: the equation as its LaTeX, as text you can read and change letter by letter;
+// Ctrl+Shift+E makes it an equation again.
+function equationToLatexText() {
+  const eq = equationAtCaret();
+  if (!eq) { say('Move next to an equation first.'); return; }
+  const text = document.createTextNode(eq.dataset.latex);
+  eq.replaceWith(text);
+  placeCaretAfter(text);
+  setDirty(true);
+  say(`Now LaTeX text: ${text.textContent}. Ctrl+Shift+E makes it an equation again.`);
 }
 
 function equationToText() {
@@ -1824,7 +1849,8 @@ async function showKeys(section = null) {
     ['Equations', [['Make the line (or selection) an equation', 'Ctrl+Shift+E'], ['Insert an equation', 'Alt+='],
       ['Edit the equation', 'Ctrl+E, or Enter before it'], ['New line after an equation', 'Enter after it'],
       ['Copy the equation above down, to change it', 'F11, or Enter on the blank line under an equation'],
-      ['Equation back to plain text', 'Ctrl+Shift+T'], ['Plain text, LaTeX and MathML', 'Ctrl+Shift+M'],
+      ['Equation back to plain text', 'Ctrl+T or Ctrl+Shift+T'], ['Equation to LaTeX text', 'Ctrl+L'],
+      ['Plain text, LaTeX and MathML', 'Ctrl+Shift+M'],
       ['In the equation box: plain text or LaTeX', 'Ctrl+L']]],
     ['Graphs', [['Graph the equation here, or explore the graph here', 'Ctrl+G, or Enter on a graph line'], ['New graph from equations', 'Ctrl+Shift+G']]],
     ['In graph mode', [['Step along the function', 'J and K'], ['Play or stop', 'Space'], ['Next and previous point of interest', 'Period and comma'],
@@ -2216,6 +2242,18 @@ doc.addEventListener('keydown', (e) => {
       return;
     }
   }
+  // Up and Down from a blank line or an equation line onto a line that is only an equation:
+  // Chromium's caret does not go there by itself (it stays put), so it is moved here.
+  if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.ctrlKey && !e.altKey && getSelection().isCollapsed) {
+    const block = currentBlock();
+    const target = e.key === 'ArrowUp' ? block?.previousElementSibling : block?.nextElementSibling;
+    const onlyEquation = (b) => b?.classList.contains('eq-line') && b.querySelector('.eq');
+    if ((isBlankLine(block) || onlyEquation(block)) && (onlyEquation(target) || (onlyEquation(block) && isBlankLine(target)))) {
+      e.preventDefault();
+      if (onlyEquation(target)) placeCaretAfter(target.querySelector('.eq')); else placeCaretIn(target);
+      return;
+    }
+  }
   // Enter on an empty list item ends the list there, as in Word.
   if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.altKey) {
     const li = listItem();
@@ -2360,6 +2398,7 @@ const COMMANDS = {
   readLine,
   toEquation: lineToEquation,
   toPlainText: equationToText,
+  toLatexText: equationToLatexText,
   exploreGraph: () => exploreGraph(),
   nextNote: () => moveToWarning(1),
   previousNote: () => moveToWarning(-1),
@@ -2378,12 +2417,12 @@ const DOCUMENT_KEYS = {
   'Ctrl+Shift+7': 'numberedList', 'Ctrl+Enter': 'pageBreak', 'Ctrl+Alt+1': 'heading1', 'Ctrl+Alt+2': 'heading2', 'Ctrl+Alt+3': 'heading3',
   'Ctrl+Alt+0': 'normalText', 'Ctrl+Shift+E': 'toEquation', 'Ctrl+E': 'editEquation', 'Alt+=': 'insertEquation', 'Ctrl+F': 'find',
   'Ctrl+H': 'replace', F3: 'findNext', 'Shift+F3': 'findPrevious', 'Ctrl+Shift+M': 'convertMath', 'Ctrl+Shift+W': 'exportDocx',
-  F1: 'keys', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', 'Ctrl+F9': 'hideWords', 'Ctrl+Shift+F9': 'hideLine', 'Ctrl+Shift+V': 'pastePlain', F11: 'copyEquationDown', 'Ctrl+PageDown': 'nextHeading', 'Ctrl+PageUp': 'previousHeading', 'Ctrl+Shift+H': 'headingList',
+  F1: 'keys', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', 'Ctrl+F9': 'hideWords', 'Ctrl+Shift+F9': 'hideLine', 'Ctrl+Shift+V': 'pastePlain', F11: 'copyEquationDown', 'Ctrl+T': 'toPlainText', 'Ctrl+Shift+T': 'toPlainText', 'Ctrl+L': 'toLatexText', 'Ctrl+PageDown': 'nextHeading', 'Ctrl+PageUp': 'previousHeading', 'Ctrl+Shift+H': 'headingList',
 };
 
 // Without the desktop menu bar (tests in a plain browser), the menu's other shortcuts work here too.
 const FALLBACK_KEYS = {
-  'Alt+=': 'insertEquation', 'Ctrl+E': 'editEquation', 'Ctrl+Shift+E': 'toEquation', 'Ctrl+Shift+T': 'toPlainText',
+  'Alt+=': 'insertEquation', 'Ctrl+E': 'editEquation', 'Ctrl+Shift+E': 'toEquation', 'Ctrl+Shift+T': 'toPlainText', 'Ctrl+T': 'toPlainText', 'Ctrl+L': 'toLatexText',
   'Ctrl+Shift+R': 'readLine', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', F8: 'nextNote', 'Shift+F8': 'previousNote',
   'Ctrl+Alt+1': 'heading1', 'Ctrl+Alt+2': 'heading2', 'Ctrl+Alt+3': 'heading3', 'Ctrl+Alt+0': 'normalText', F1: 'keys', 'Ctrl+,': 'settings',
   'Ctrl+B': 'bold', 'Ctrl+I': 'italic', 'Ctrl+U': 'underline', 'Ctrl+Shift+L': 'bulletList', 'Ctrl+Shift+&': 'numberedList', 'Ctrl+Shift+7': 'numberedList',
@@ -2421,7 +2460,28 @@ document.addEventListener('selectionchange', () => {
   const node = sel.anchorNode.nodeType === Node.ELEMENT_NODE ? sel.anchorNode : sel.anchorNode.parentElement;
   const eq = node?.closest('.eq');
   if (eq && eq !== doc) placeCaretAfter(eq);
+  announceEquation();
 });
+
+// In focus mode NVDA reads only the start of an equation (MathCAT reads it in browse mode), so
+// when the cursor comes to an equation, it is said once as plain text. Settings > Writing can
+// turn this off.
+let announcedEquation = null;
+let announceTimer = null;
+function announceEquation() {
+  clearTimeout(announceTimer);
+  announceTimer = setTimeout(() => {
+    if (savedSettings?.values?.say_equations === false || document.activeElement !== doc) return;
+    const eq = equationAtCaret();
+    if (eq === announcedEquation) return;
+    announcedEquation = eq;
+    if (!eq) return;
+    const words = latexToPlain(eq.dataset.latex);
+    // Just converted or copied: that was said a moment ago.
+    if (Date.now() - lastSaid.at < 600 && lastSaid.text.includes(words)) return;
+    say(`Equation: ${words}`);
+  }, 250);
+}
 
 const first = el('p');
 first.append(el('br'));

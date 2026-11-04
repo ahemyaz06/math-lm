@@ -122,7 +122,8 @@ function buildMenu() {
     { label: '&Math', submenu: [
       { label: '&Edit equation', accelerator: 'Ctrl+E', click: send('editEquation') },
       { label: '&Convert line or selection to equation', accelerator: 'Ctrl+Shift+E', click: send('toEquation') },
-      { label: 'Convert equation to &plain text', accelerator: 'Ctrl+Shift+T', click: send('toPlainText') },
+      { label: 'Convert equation to &plain text', accelerator: 'Ctrl+T', click: send('toPlainText') },
+      { label: 'Convert equation to LaTe&X text', accelerator: 'Ctrl+L', click: send('toLatexText') },
       { label: 'Copy the equation above &down', accelerator: 'F11', click: send('copyEquationDown') },
       { label: 'Convert between plain text, &LaTeX and MathML…', accelerator: 'Ctrl+Shift+M', click: send('convertMath') },
       { label: '&Read line with equations spelled out', accelerator: 'Ctrl+Shift+R', click: send('readLine') },
@@ -183,7 +184,7 @@ function buildMenu() {
   // but does not register them: otherwise a key press could run its command twice.
   const pageKeys = new Set(['Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+L', 'Ctrl+Shift+7', 'Ctrl+Enter', 'Ctrl+Alt+1', 'Ctrl+Alt+2',
     'Ctrl+Alt+3', 'Ctrl+Alt+0', 'Ctrl+Shift+E', 'Ctrl+E', 'Alt+=', 'Ctrl+F', 'Ctrl+H', 'F3', 'Shift+F3', 'Ctrl+Shift+M', 'Ctrl+Shift+W',
-    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9', 'F11']);
+    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9', 'F11', 'Ctrl+T', 'Ctrl+Shift+T', 'Ctrl+L']);
   for (const menu of template) for (const item of menu.submenu) if (pageKeys.has(item.accelerator)) item.registerAccelerator = false;
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
