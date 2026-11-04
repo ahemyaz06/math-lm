@@ -59,8 +59,12 @@ current line with equations spelled out.
 
 - Type maths as plain text, for example `(x^2 - 4)/(x - 2)` or `sqrt(x+1)`, then press
   Ctrl+Shift+E: the line (or your selection) becomes a real equation.
-- Alt+= inserts an equation. Enter on an equation line, or Ctrl+E next to an equation,
-  edits it as plain text; inside, Ctrl+L switches between plain text and LaTeX.
+- Alt+= inserts an equation. Ctrl+E next to an equation (or Enter before an equation on its
+  own line) edits it as plain text; inside, Ctrl+L switches between plain text and LaTeX.
+- Working line by line: Enter after an equation starts a new line. Enter again, on that blank
+  line, copies the equation down to the next line (the blank line stays between them), ready to
+  change with Ctrl+E. F11 copies the last equation above the cursor down at any time (onto this
+  line if it is empty). Settings > Writing can turn off the Enter copy; F11 always works.
 - Ctrl+Shift+M converts between plain text, LaTeX and MathML, in any direction. The
   result updates as you type; a preview below it can be read with MathCAT; Enter copies
   the result and "Insert as equation" puts it in the document.
@@ -173,7 +177,7 @@ each problem a level-2 heading, and an empty answer line under each problem.
 
 ## Settings
 
-The Settings menu (Alt, then S) has three small dialogs: Reading PDFs (Ctrl+comma), AI
+The Settings menu (Alt, then S) has small dialogs: Reading PDFs (Ctrl+comma), Writing, AI
 add-on, and Graph sound. Tab moves between the choices, Enter saves, Escape cancels. Restore defaults puts
 everything back. Settings are saved in `%LOCALAPPDATA%\MathNotebook\settings.json`.
 
@@ -184,9 +188,14 @@ everything back. Settings are saved in `%LOCALAPPDATA%\MathNotebook\settings.jso
 - Reading PDFs (from Recognition Lab and the reader): how pages are read (above);
   describe pictures with AI; estimate numbers from graph pictures; the reading model;
   a second model that re-reads AI pages with review notes; pages read at the same time.
-- Graph sound (from Sound Lab): sound profile (Gentle by default), the bass line while
-  playing (x and height, x only, height only, off), the step, playing speed, sounds for
-  points of interest, step volume, bass volume.
+- Writing: Enter on the blank line under an equation copies it down (on by default).
+- Graph sound (from Sound Lab): the sound (Gentle by default; also instruments, beeps and game
+  sounds, each heard as you move through the list, and Listen plays a whole example), clearer
+  pitch (notes slide from the last height; off is the original sound), the slope sound, the bass
+  line while playing (x and height, x only, height only, off), the step, playing speed, sounds
+  for points of interest, step volume, bass volume. The Sound guide button there (also in the
+  Help menu) plays every sound with what it means, and a quiz: play a mystery sound, then
+  choose what it was.
 - Moving freely: tones when the arrow keys land on a curve,
   a dot or the origin. With them off, the position is still read.
 
@@ -203,6 +212,15 @@ Insert > Graph from equations (Ctrl+Shift+G) makes a graph from functions you ty
 - Period and comma: next and previous point of interest (peaks, zeros, corners, dots).
 - Home and End: ends of the function. V reads the point, I describes the graph,
   F changes the step (0.1, 0.25, 0.5, 1), question mark lists the keys.
+- S: the slope where you are ("slope 2, rising", "flat", "vertical"); at a corner both
+  sides' slopes, at a jump "the curve jumps here". On a graph drawn on a page (no formula) it is
+  an estimate ("about").
+- L: the limits from the left and the right and the value there, then what that means:
+  continuous, a hole, a jump, a vertical asymptote, or the curve is only on one side.
+- D: the slope sound on or off. After each step's note comes a soft second note for the slope,
+  on the same pitch scale as heights: high is rising, the middle note is flat, low is falling.
+  At a peak or a valley it passes the middle note. Settings > Graph sound can have it on from
+  the start.
 - Numbers are said rounded to the nearest half (a height of 4.19 is "4", a zero at 1.73 is
   "1.5", 0.00004 is "0"); where you are along x is said as you stepped. Settings > Graph sound >
   Numbers you hear can choose one decimal or exact. The document's own text stays exact.

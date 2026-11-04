@@ -113,3 +113,4 @@ dialog.wide { width: min(92vw, 52rem); max-height: 88vh; overflow-y: auto; }
 #keys-body table { width: 100%; border-collapse: collapse; }
 #keys-body td, #keys-body th { border-bottom: 1px solid var(--line); padding: .2rem .5rem; text-align: left; }
 @media print { .toolbar { display: none !important; } }
+.guide-item p { margin: .2rem 0 .8rem; }

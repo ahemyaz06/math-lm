@@ -26,6 +26,16 @@ const roundWords = (text) => text.replace(/(minus )?(\d+(?:\.\d+)?(?:e(?:minus |
   return Number.isFinite(v) ? say(v) : m;
 });
 
+// A slope in words, to one decimal: "slope 2, rising", "flat, slope 0".
+function slopeWords(m, about = '') {
+  if (!Number.isFinite(m)) return `vertical, going straight ${m > 0 ? 'up' : 'down'}`;
+  if (Math.abs(m) > 1000) return `${about}nearly vertical, ${m > 0 ? 'rising' : 'falling'} very steeply`;
+  const r = Math.round(m * 10) / 10;
+  if (r === 0) return `flat, slope ${about}0`;
+  const how = Math.abs(r) < 0.5 ? ' gently' : Math.abs(r) > 3 ? ' steeply' : '';
+  return `slope ${about}${formatNumber(r).replace('-', 'minus ')}, ${r > 0 ? 'rising' : 'falling'}${how}`;
+}
+
 // A function made from the exact points the PDF reader found (straight pieces or samples).
 function sampledFunction(curve, dots = []) {
   // Samples may have null between pieces (a student copy's curve breaks at a jump or an
@@ -113,7 +123,7 @@ export class GraphMode {
   // Settings > Graph sound.
   applySettings(s) {
     this.settings = { sound_profile: 'gentle', bass_mode: 'x-and-y', step: 0.5, play_speed_ms: 400, cues: true,
-      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', graph_numbers: 'half', pitch_glide: true, ...this.settings, ...s };
+      volume: 0.25, bass_volume: 0.35, free_move_tones: true, dot_sounds: 'new', graph_numbers: 'half', pitch_glide: true, slope_sound: false, ...this.settings, ...s };
     const v = this.settings;
     this.sound.setSoundProfile(v.sound_profile);
     this.sound.setBassOutlineMode(v.bass_mode);
@@ -123,22 +133,79 @@ export class GraphMode {
     this.sound.setStepDelayMs(v.play_speed_ms);
     this.sound.setDotSounds(v.dot_sounds);
     this.sound.setPitchGlide(v.pitch_glide);
+    if ('slope_sound' in s) this.slopeSound = Boolean(v.slope_sound); // D in graph mode turns it on or off for now
     setNumberStyle(v.graph_numbers);
   }
 
   // Settings > Graph sound: hear a sound before saving it. The example climbs from 0 to 3,
   // falls to minus 2 and comes back to 0, from left to right; then a solid dot and an open dot.
   // short: just a climb and a fall, when moving through the choices.
-  preview(values, short = false) {
+  previewEngineFor(values) {
     const engine = this.previewEngine ||= new CalculusSoundEngine();
     const v = { ...this.settings, ...values };
     engine.setSoundProfile(v.sound_profile);
     engine.setVolume(v.volume);
+    engine.setBassOutlineVolume(v.bass_volume);
+    engine.setBassOutlineMode(v.bass_mode === 'off' ? 'x-and-y' : v.bass_mode);
+    engine.setCuesEnabled(true);
     engine.setPitchGlide(v.pitch_glide);
     engine.setDotSounds(v.dot_sounds);
     engine.setStepDelayMs(300);
     engine.setWindow({ y: [-3, 4] });
     for (const t of this.previewTimers || []) clearTimeout(t);
+    engine.stopBassOutline();
+    this.previewTimers = [];
+    return engine;
+  }
+
+  // The sound guide (Help > Sound guide): one sound, played as graph mode would play it.
+  // name: one of GUIDE_SOUNDS' names.
+  guide(name, values) {
+    const e = this.previewEngineFor(values);
+    const at = (ms, f) => this.previewTimers.push(setTimeout(f, ms));
+    const notes = (ys, gap = 300, xs = null, withSlope = false) => ys.forEach((y, i) => at(i * gap, () => {
+      const x = xs ? xs[i] : -3 + (6 * i) / Math.max(1, ys.length - 1);
+      e.playSeatedPulse(x, y, 4, i ? ys[i - 1] : null);
+      if (withSlope) e.playSlopeNote(x, 2 * x, 4, i ? 2 * (xs ? xs[i - 1] : 0) : null, 0.13);
+    }));
+    const effect = (kind, y = 1, mark = null, x = 0) => e.playLandmarkEffect(kind, x, 4, y, mark);
+    switch (name) {
+      case 'above': return notes([1, 3, 6], 450, [0, 0, 0]);
+      case 'zero': return notes([0], 300, [0]);
+      case 'below': return notes([-1, -3, -6], 450, [0, 0, 0]);
+      case 'up': return notes([0, 0.5, 1, 1.5, 2, 2.5, 3]);
+      case 'down': return notes([3, 2.5, 2, 1.5, 1, 0.5, 0, -0.5, -1]);
+      case 'leftright': return notes([1, 1, 1], 500, [-4, 0, 4]);
+      case 'gear': return notes([9, 9.5, 10, 10.5, 11], 400, [0, 0, 0, 0, 0]);
+      case 'bass': {
+        const ys = [0, 0.5, 1, 1.5, 2, 1.5, 1, 0.5, 0, -0.5, -1];
+        ys.forEach((y, i) => at(i * 300, () => {
+          const x = -3 + (6 * i) / (ys.length - 1);
+          e.playStepSequence({ x, lim: { defined: true, y }, boundary: 4, prevY: i ? ys[i - 1] : null, withBassOutline: true });
+        }));
+        return at(ys.length * 300 + 200, () => e.stopBassOutline());
+      }
+      case 'peak': return effect('maximum', 2);
+      case 'valley': return effect('minimum', -2);
+      case 'x-axis': return effect('x-axis', 0, null, 1);
+      case 'y-axis': return effect('y-axis', 1);
+      case 'origin': return effect('origin', 0);
+      case 'solid': return effect('solid-point', 1);
+      case 'open': return effect('open-point', 1);
+      case 'corner': return effect('corner', 0, { slopeLeft: -1, slopeRight: 1 }, 1);
+      case 'asymptote': return effect('asymptote', 0, null, 1);
+      case 'end': return effect('endpoint', 1, { included: true });
+      case 'slope': {
+        // y = x^2 from -2 to 2: the slope note falls, passes the middle note at the valley, then rises.
+        const xs = [-2, -1.5, -1, -0.5, 0, 0.5, 1, 1.5, 2];
+        return notes(xs.map((x) => x * x), 450, xs, true);
+      }
+      default: return undefined;
+    }
+  }
+
+  preview(values, short = false) {
+    const engine = this.previewEngineFor(values);
     const ys = short ? [0, 1, 2, 1, 0] : [0, 0.5, 1, 1.5, 2, 2.5, 3, 2.5, 2, 1.5, 1, 0.5, 0, -0.5, -1, -1.5, -2, -1.5, -1, -0.5, 0];
     const gap = short ? 220 : 300;
     this.previewTimers = ys.map((y, i) => setTimeout(() => {
@@ -209,6 +276,7 @@ export class GraphMode {
       .filter((l) => !hidden.has(l.kind) && l.x >= lo - 1e-9 && l.x <= hi + 1e-9).sort((a, b) => a.x - b.x);
     if (start) this.x = this.onGrid(Math.max(lo, Math.min(hi, 0)));
     this.prevY = null;
+    this.prevSlope = null;
   }
 
   onGrid(x) { return Math.round(x / this.step) * this.step; }
@@ -248,6 +316,11 @@ export class GraphMode {
     const lim = f.limitAt(this.x);
     this.sound.playStepSequence({ x: this.x, lim, boundary: this.boundary, prevY: this.prevY, passedOver: events.passedOver, landedOn: events.landedOn, withBassOutline: withBass });
     if (lim.defined || lim.hole) this.prevY = lim.y;
+    if (this.slopeSound) {
+      const m = lim.defined ? this.slopeAt(this.x).slope : null;
+      this.sound.playSlopeNote(this.x, m, this.boundary, this.prevSlope, Math.min(0.15, this.settings.play_speed_ms * 0.00045));
+      this.prevSlope = m;
+    }
     this.draw();
     const landed = events.landedOn.map((l) => l.label).join('; ');
     if (!withBass) this.speak(`${this.where()}${landed ? `. ${landed}` : ''}`, 650); // read once you stop moving
@@ -305,6 +378,74 @@ export class GraphMode {
     this.speak([...new Set(here.map((l) => l.label))].join('; '));
   }
 
+  // The curve's height just left (dir -1) or right (dir 1) of x, closer and closer:
+  // { value } where it settles, { infinite: 1 or -1 } where it runs off, or null (no curve there,
+  // or it never settles).
+  sideLimit(x, dir) {
+    const f = this.fn;
+    const v = [1e-3, 1e-4, 1e-5, 1e-6].map((h) => { const l = f.limitAt(x + dir * h); return l.defined ? l.y : NaN; });
+    if (!v.slice(1).every(Number.isFinite)) return null;
+    if (Math.abs(v[3]) > 1e4 && Math.abs(v[3]) > 10 * Math.abs(v[0])) return { infinite: Math.sign(v[3]) };
+    if (Math.abs(v[1] - v[3]) > 0.01 * (1 + Math.abs(v[3]))) return null;
+    return { value: Number(v[3].toPrecision(6)) };
+  }
+
+  // L: the limits at the cursor from the left and the right, and the value there.
+  limits() {
+    if (!this.fn) return 'No function to read.';
+    const x = this.tracing ? this.x : this.free.x;
+    const words = (l) => (!l ? 'no limit' : l.infinite ? (l.infinite > 0 ? 'goes up to infinity' : 'goes down to minus infinity') : say(l.value));
+    const left = this.sideLimit(x, -1), right = this.sideLimit(x, 1);
+    const here = this.fn.limitAt(x);
+    const value = here.defined ? `the value is ${say(here.y)}` : 'there is no point here';
+    const same = left && right && !left.infinite && !right.infinite && Math.abs(left.value - right.value) <= 1e-4 * (1 + Math.abs(left.value));
+    let verdict;
+    if (same) verdict = here.defined && Math.abs(here.y - left.value) <= 1e-4 * (1 + Math.abs(here.y)) ? 'Continuous here.' : here.defined ? 'The limit and the value differ.' : 'A hole: the limit exists, but there is no point.';
+    else if (left && right && left.infinite && left.infinite === right.infinite) verdict = 'A vertical asymptote.';
+    else if (left && right) verdict = left.infinite || right.infinite ? 'A vertical asymptote: the two sides differ.' : 'No limit: the two sides differ, a jump.';
+    else verdict = !left && !right ? 'No curve on either side.' : `The curve is only on the ${left ? 'left' : 'right'}.`;
+    const sides = same ? `from both sides ${say(left.value)}` : `from the left ${words(left)}, from the right ${words(right)}`;
+    return `At x = ${exact(x)}: ${sides}; ${value}. ${verdict}`;
+  }
+
+  // The slope at x from the curve's heights on each side: { slope } where both sides agree,
+  // otherwise { left, right } (a corner, a jump or an end), each null where there is none.
+  slopeAt(x) {
+    const f = this.fn;
+    const h = 1e-4;
+    const y = (t) => { const l = f.limitAt(t); return l.defined ? l.y : NaN; };
+    const y0 = y(x);
+    if (!Number.isFinite(y0)) return { slope: null, left: null, right: null };
+    // One side's slope; where it keeps growing as the step shrinks (the start of sqrt x, the
+    // middle of cbrt x) the curve is vertical there: an infinite slope.
+    const side = (dir) => {
+      const a = y(x + dir * h), b = y(x + dir * h / 100);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      // A gap that does not close as the step shrinks is a jump: no slope across it.
+      if (Math.abs(b - y0) > 1e-3 && Math.abs(b - y0) > 0.5 * Math.abs(a - y0)) return NaN;
+      const far = (a - y0) / (dir * h), near = (b - y0) / (dir * h / 100);
+      return Math.abs(near) > 50 && Math.abs(near) > 4 * Math.abs(far) ? Math.sign(near) * Infinity : near;
+    };
+    const left = side(-1), right = side(1);
+    if (Number.isNaN(left) || Number.isNaN(right)) return { slope: null, left, right, jump: true };
+    const same = left !== null && right !== null && (left === right || Math.abs(left - right) <= 0.02 * (1 + Math.abs(left) + Math.abs(right)));
+    if (same) return { slope: Number.isFinite(left) ? (left + right) / 2 : left, left, right };
+    return { slope: null, left, right };
+  }
+
+  // S: the slope at the cursor, in words. A graph drawn on the page (no formula) gives an estimate.
+  slope() {
+    if (!this.fn) return 'No function to read.';
+    const x = this.tracing ? this.x : this.free.x;
+    const about = this.fn.compiled || this.fn.graph ? '' : 'about ';
+    const { slope, left, right, jump } = this.slopeAt(x);
+    if (jump) return `At x = ${exact(x)}: no single slope, the curve jumps here.`;
+    if (slope !== null) return `At x = ${exact(x)}: ${slopeWords(slope, about)}.`;
+    if (left === null && right === null) return `At x = ${exact(x)}: no slope, there is no point here.`;
+    if (left === null || right === null) return `At x = ${exact(x)}: the curve ${left === null ? 'starts' : 'ends'} here; from the ${left === null ? 'right' : 'left'}, ${slopeWords(left ?? right, about)}.`;
+    return `At x = ${exact(x)}: no single slope, a corner. From the left, ${slopeWords(left, about)}; from the right, ${slopeWords(right, about)}.`;
+  }
+
   describe() {
     // Functions with their formula are described afresh, numbers rounded as Settings asks;
     // a stored description (a student copy, a PDF graph) has its numbers rounded the same way.
@@ -322,7 +463,7 @@ export class GraphMode {
 
   // The same actions from the Graph menu (for mouse users, and to find them by name).
   command(name) {
-    const keys = { play: ' ', next: '.', previous: ',', describe: 'i', read: 'v', step: 'f', function: 'Tab', close: 'Escape' };
+    const keys = { play: ' ', next: '.', previous: ',', describe: 'i', read: 'v', step: 'f', function: 'Tab', close: 'Escape', slope: 's', limits: 'l', slopeSound: 'd' };
     this.root.focus();
     this.key({ key: keys[name], shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, preventDefault() {} });
   }
@@ -359,6 +500,15 @@ export class GraphMode {
     }
     if (k === 'v' || k === 'V' || k === 'Enter') { handled(); this.speak(this.where()); return; }
     if (k === 'i' || k === 'I') { handled(); this.describe(); return; }
+    if (k === 's' || k === 'S') { handled(); this.pause(false); this.speak(this.slope()); return; }
+    if (k === 'l' || k === 'L') { handled(); this.pause(false); this.speak(this.limits()); return; }
+    if (k === 'd' || k === 'D') {
+      handled();
+      this.slopeSound = !this.slopeSound;
+      this.prevSlope = null;
+      this.speak(this.slopeSound ? 'Slope sound on: after each note, a soft second note for the slope. High is rising, the middle note is flat, low is falling.' : 'Slope sound off.');
+      return;
+    }
     if (k === '.') { handled(); this.jumpLandmark(1); return; }
     if (k === ',') { handled(); this.jumpLandmark(-1); return; }
     if (k === 'Home') { handled(); this.pause(false); this.tracing = true; this.traceTo(this.lo, false); return; }
@@ -374,7 +524,8 @@ export class GraphMode {
       this.speak('K or J: step along the function, forward or back. Arrow keys: move freely; a tone plays when you land on a curve. '
         + 'C: put the cursor back on the function. Space: play or stop with the bass line; stopping reads the point. '
         + 'Tab and Shift+Tab: next or previous function. Period and comma: next or previous point of interest. '
-        + 'Home and End: ends of the function. V: read the point. I: describe the graph. F: step size. Escape: back to the document.');
+        + 'Home and End: ends of the function. V: read the point. I: describe the graph. S: the slope here. L: the limits from the left and the right. '
+        + 'D: slope sound on or off. F: step size. Escape: back to the document.');
     }
   }
 

@@ -243,6 +243,10 @@
         <select id="set-second_model" name="second_model"></select>
       </div>
     </fieldset>
+    <fieldset id="settings-writing">
+      <legend>Writing</legend>
+      <label><input type="checkbox" id="set-enter_copies_equation" name="enter_copies_equation"> Enter on the empty line below an equation copies the equation down, leaving that line blank (F11 copies it any time)</label>
+    </fieldset>
     <fieldset id="settings-sound">
       <legend>Graph sound</legend>
       <label for="set-sound_profile">Sound</label>
@@ -278,6 +282,8 @@
         </optgroup>
       </select>
       <button type="button" id="sound-listen">Listen</button>
+      <label><input type="checkbox" id="set-slope_sound" name="slope_sound"> Slope sound in graph mode: a soft second note for the slope after each step (D turns it on or off)</label>
+      <button type="button" id="sound-guide-open">Sound guide…</button>
       <label><input type="checkbox" id="set-pitch_glide" name="pitch_glide"> Clearer pitch: notes slide from the last height and are a little further apart (off: the original sound)</label>
       <label for="set-bass_mode">Bass line while playing</label>
       <select id="set-bass_mode" name="bass_mode">
@@ -341,6 +347,17 @@
       Every sound uses the same pitch for the same height; only its colour changes.
       Numbers you hear are rounded to the nearest half unless you choose otherwise.</p></template>
   </form>
+</dialog>
+
+<dialog id="sound-guide-dialog" aria-labelledby="sound-guide-title">
+  <h2 id="sound-guide-title">Sound guide</h2>
+  <p>Each button plays one sound of graph mode, with your sound settings.</p>
+  <div id="sound-guide-list"></div>
+  <h3 id="sound-quiz-title">Test yourself</h3>
+  <button type="button" id="sound-quiz-play">Play a mystery sound</button>
+  <div id="sound-quiz-answers" role="group" aria-labelledby="sound-quiz-title"></div>
+  <p id="sound-quiz-result" role="status"></p>
+  <div class="buttons"><button type="button" id="sound-guide-close">Close</button></div>
 </dialog>
 
 <dialog id="help-dialog" aria-labelledby="help-title" aria-describedby="help-text">

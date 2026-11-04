@@ -54,6 +54,25 @@ export class CalculusSoundEngine {
     this.pitchGlide = Boolean(on);
   }
 
+  // The slope sound: a soft second note just after each step's note, for the slope there.
+  // It uses the same pitch scale as the height: rising is a high note, flat is the middle
+  // note (the zero note), falling is a low note. So where the curve has a peak or a valley,
+  // the slope note passes through the middle note. Slope is null where there is none (a
+  // corner or a jump): then no note.
+  playSlopeNote(x, slope, boundary = 5, prevSlope = null, delay = 0.15) {
+    if (!Number.isFinite(slope)) return;
+    const ctx = this.ensureContext();
+    const when = ctx.currentTime + Math.max(0, delay);
+    const level = this.computeQuantizedLevel(Math.abs(slope) < 1e-6 ? 0 : slope);
+    const from = this.slideFrom(prevSlope, slope, (v) => this.computeQuantizedLevel(v).frequency);
+    const panner = ctx.createStereoPanner();
+    panner.pan.setValueAtTime(this.computePan(x, boundary), when);
+    panner.connect(this.masterCompressor);
+    // A different colour from the step's note, so the two are never confused.
+    const voice = ['beep', 'soft-square', 'chirp', 'progress'].includes(this.soundProfile) ? 'kalimba' : 'beep';
+    playVoice(ctx, panner, voice, { freq: level.frequency, fromFreq: from, when, length: Math.min(0.25, this.stepDurationSeconds * 0.5), volume: this.volume * 0.55 });
+  }
+
   // The pitch to slide from: the last step's, when the height changed.
   slideFrom(prevY, y, freqOf) {
     if (!this.pitchGlide || !Number.isFinite(prevY) || !Number.isFinite(y) || prevY === y) return null;

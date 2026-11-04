@@ -59,6 +59,10 @@ def _spec():
                                      'beep', 'soft-square', 'chirp', 'chiptune', 'retro-triangle', 'bubble', 'arcade']),
         # Clearer pitch: notes slide from the last height's pitch and are further apart (off: the original)
         'pitch_glide': (True, [True, False]),
+        # The slope sound in graph mode: a soft second note for the slope after each step (D turns it on or off)
+        'slope_sound': (False, [True, False]),
+        # Writing: Enter on the empty line below an equation copies that equation down (with a blank line between)
+        'enter_copies_equation': (True, [True, False]),
         'bass_mode': ('x-and-y', ['x-and-y', 'x-only', 'y-only', 'off']),
         'step': (0.5, [0.1, 0.25, 0.5, 1]),
         'play_speed_ms': (400, [800, 400, 250, 150]),

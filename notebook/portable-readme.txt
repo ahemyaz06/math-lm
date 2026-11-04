@@ -27,10 +27,20 @@ File > Export as PDF        a tagged PDF
 
 MATHS
 Type maths as plain text, for example (x^2 - 4)/(x - 2), select it, and press
-Ctrl+Shift+E: it becomes a real equation. Alt+= inserts an equation. Enter on an
+Ctrl+Shift+E: it becomes a real equation. Alt+= inserts an equation. Ctrl+E on an
 equation edits it as plain text; Ctrl+L there switches to LaTeX.
+Working line by line: Enter after an equation starts a new line; Enter again copies the
+equation down (with a blank line between), ready to change with Ctrl+E. F11 copies the
+equation above down at any time.
 Ctrl+Shift+M converts between plain text, LaTeX and MathML (both ways), with a preview
 you can read with MathCAT. Ctrl+Shift+R reads the current line with equations spelled out.
+
+GRAPHS BY SOUND
+Enter on a graph line opens graph mode. J and K step along the curve, Space plays it, period
+and comma jump between points of interest, S says the slope, L the limits from the left and
+the right, D adds a soft note for the slope after each step, I describes the graph, question
+mark lists every key, Escape goes back. Help > Sound guide plays every sound with what it
+means. Settings > Graph sound chooses the sound: calm, instruments, beeps or game sounds.
 
 LATEX FILES AND SHARING
 File > Import LaTeX (.tex) reads a teacher's LaTeX source exactly, including pgfplots graphs,

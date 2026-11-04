@@ -908,6 +908,66 @@ function equationToText() {
   say(`Now plain text: ${text.textContent}`);
 }
 
+// ---------- working line by line: the equation above, copied down ----------
+
+// A line with nothing on it (an empty paragraph).
+const isBlankLine = (b) => b?.tagName === 'P' && !b.textContent.trim() && !b.querySelector('.eq, img, .graph-line') && !b.classList.contains('graph-line');
+
+// The last equation before the cursor: on this line, or else on the nearest line above that has one.
+function equationBefore(block) {
+  if (block?.querySelector('.eq')) return [...block.querySelectorAll('.eq')].at(-1);
+  for (let b = block?.previousElementSibling; b; b = b.previousElementSibling) {
+    const all = b.querySelectorAll('.eq');
+    if (all.length) return all[all.length - 1];
+  }
+  return null;
+}
+
+// F11 (and Enter on the blank line under an equation): the last equation before the cursor
+// comes down as a new equation line, ready to change (Ctrl+E). It goes on this line when this
+// line is empty, otherwise on a new line below it.
+function copyEquationDown() {
+  const block = currentBlock();
+  const source = equationBefore(block);
+  if (!source) { say('There is no equation above to copy.'); return; }
+  const line = equationLine(source.dataset.latex);
+  if (isBlankLine(block)) block.replaceWith(line);
+  else if (block) block.after(line);
+  else doc.append(line);
+  placeCaretAfter(line.firstChild);
+  line.scrollIntoView({ block: 'center' });
+  setDirty(true);
+  say(`Copied down: ${latexToPlain(source.dataset.latex)}. Ctrl+E changes it.`);
+}
+
+// The cursor is just after this equation (nothing but spaces between).
+function caretAfter(eq) {
+  const sel = getSelection();
+  if (!sel.rangeCount || !sel.isCollapsed) return false;
+  const after = document.createRange();
+  after.setStartAfter(eq);
+  return sel.getRangeAt(0).compareBoundaryPoints(Range.START_TO_START, after) >= 0;
+}
+
+// An equation line, or a line whose last thing is an equation (text after it is only spaces or a full stop).
+function endsWithEquation(block) {
+  if (!block || block.tagName !== 'P') return false;
+  if (block.classList.contains('eq-line')) return Boolean(block.querySelector('.eq'));
+  let last = block.lastChild;
+  while (last && (last.nodeName === 'BR' || (last.nodeType === Node.TEXT_NODE && /^[\s.,;]*$/.test(last.textContent)))) last = last.previousSibling;
+  return last?.nodeType === Node.ELEMENT_NODE && last.classList.contains('eq');
+}
+
+// A new empty line after this one, with the cursor on it.
+function newLineAfter(block) {
+  const p = el('p');
+  p.append(el('br'));
+  block.after(p);
+  placeCaretIn(p);
+  setDirty(true);
+  return p;
+}
+
 function setBlockType(tag) {
   const block = currentBlock();
   if (!block || block.classList.contains('graph-line')) return;
@@ -1639,7 +1699,7 @@ async function exportStudentPdf() {
 const PREVIEW_SAFE = new Set(['studentPreview', 'teacherMode', 'keys', 'exploreGraph', 'readLine', 'find', 'findNext', 'findPrevious', 'wordCount',
   'nextHeading', 'previousHeading', 'headingList', 'nextNote', 'previousNote', 'saveStudentCopy', 'exportStudentDocx', 'exportStudentPdf',
   'settings', 'settingsReading', 'settingsSound', 'settingsAi', 'print', 'graphPlay', 'graphNextPoint', 'graphPreviousPoint',
-  'graphDescribe', 'graphReadPoint', 'graphStep', 'graphNextFunction', 'graphClose', 'copyGraphLatex', 'convertMath', 'save', 'saveAs']);
+  'graphDescribe', 'graphReadPoint', 'graphStep', 'graphNextFunction', 'graphClose', 'graphSlope', 'graphLimits', 'graphSlopeSound', 'soundGuide', 'copyGraphLatex', 'convertMath', 'save', 'saveAs']);
 
 // When a dialog closes, the document gets the focus back, unless graph mode or another
 // dialog is open (they keep it).
@@ -1763,10 +1823,11 @@ async function showKeys() {
   const extra = [
     ['In the document', [['Next and previous heading', 'Ctrl+Page Down, Ctrl+Page Up'], ['Between the toolbar and the document', 'F6'],
       ['List item in or out a level, next table cell', 'Tab, Shift+Tab'], ['Spelling suggestions on a misspelled word', 'Applications key'],
-      ['Edit the equation at the caret', 'Enter on an equation line, or Ctrl+E']]],
+      ['Edit the equation at the caret', 'Ctrl+E, or Enter before an equation'], ['New line after an equation', 'Enter after it'],
+      ['Copy the equation above down, to change it', 'F11, or Enter on the blank line under an equation']]],
     ['In graph mode', [['Step along the function', 'J and K'], ['Play or stop', 'Space'], ['Move freely', 'Arrow keys'],
       ['Next and previous point of interest', 'Period and comma'], ['Next function', 'Tab'], ['Describe the graph', 'I'],
-      ['Read the point', 'V'], ['Step size', 'F'], ['Ends of the function', 'Home and End'], ['Back to the document', 'Escape']]],
+      ['Read the point', 'V'], ['Slope here', 'S'], ['Limits from the left and the right', 'L'], ['Slope sound on or off', 'D'], ['Step size', 'F'], ['Ends of the function', 'Home and End'], ['Back to the document', 'Escape']]],
   ];
   for (const [name, rows] of extra) {
     body.append(el('h3', {}, name));
@@ -1974,7 +2035,7 @@ function fillSettings({ values, models }) {
 }
 
 // Each part of Settings is its own small dialog: Reading PDFs, AI add-on, Graph sound.
-const SETTINGS_PARTS = { reading: 'Reading PDFs', ai: 'AI add-on', sound: 'Graph sound' };
+const SETTINGS_PARTS = { reading: 'Reading PDFs', ai: 'AI add-on', writing: 'Writing', sound: 'Graph sound' };
 async function openSettings(section) {
   if (!SETTINGS_PARTS[section]) section = 'reading';
   for (const part of Object.keys(SETTINGS_PARTS)) $(`settings-${part}`).hidden = part !== section;
@@ -1989,7 +2050,7 @@ async function openSettings(section) {
   $('settings-error').textContent = '';
   $('settings-dialog').showModal();
   const installed = savedSettings.ai_installed !== false;
-  const first = { sound: 'set-sound_profile', ai: installed ? 'set-use_ai' : null, reading: installed && $('set-use_ai').checked ? 'set-reading_method' : 'set-pages_at_once' }[section];
+  const first = { sound: 'set-sound_profile', writing: 'set-enter_copies_equation', ai: installed ? 'set-use_ai' : null, reading: installed && $('set-use_ai').checked ? 'set-reading_method' : 'set-pages_at_once' }[section];
   (first ? $(first) : $('settings-save')).focus();
 }
 
@@ -2039,6 +2100,84 @@ $('set-sound_profile').addEventListener('change', () => graphMode.preview(settin
 $('sound-listen').addEventListener('click', () => say(graphMode.preview(settingsFromForm())));
 $('settings-dialog').addEventListener('close', () => { (settingsReturn && document.contains(settingsReturn) ? settingsReturn : doc).focus(); });
 
+// ---------- the sound guide (Help > Sound guide, or Settings > Graph sound) ----------
+
+// [name, what it is, what you hear]. The names are graph-mode.js guide()'s.
+function guideSounds(dots) {
+  const newDots = dots !== 'original';
+  return [
+    ['above', 'Above zero', 'A clear note. The higher the curve, the higher the note: here 1, 3 and 6.'],
+    ['zero', 'At zero', 'The middle note: zero, home.'],
+    ['below', 'Below zero', 'A warmer, lower note, lower as the curve goes down: minus 1, minus 3, minus 6.'],
+    ['up', 'Going up', 'Steps along a rising curve: each note a little higher, sliding up from the last.'],
+    ['down', 'Going down', 'Steps along a falling curve, through zero and below it.'],
+    ['leftright', 'Left and right', 'Where you are along x: the left of the graph in your left ear, the right in your right ear.'],
+    ['gear', 'Past 10', 'Above 10 the notes start again from low, and a small tick marks the change.'],
+    ['bass', 'The bass line', 'While playing with Space, a soft low line follows the curve under the notes.'],
+    ['peak', 'A peak', 'A swell that rises: the highest point nearby.'],
+    ['valley', 'A valley', 'A swell that falls: the lowest point nearby.'],
+    ['x-axis', 'Crossing the x-axis', 'A soft tick where the curve crosses zero.'],
+    ['y-axis', 'Crossing the y-axis', 'A tick in the middle, where x is zero.'],
+    ['origin', 'The origin', 'A soft chime at 0, 0.'],
+    ['solid', 'A solid dot', newDots ? 'A small bump: a point that is on the graph.' : 'A held tone: a point that is on the graph.'],
+    ['open', 'An open dot, a hole', newDots ? 'A breath of wind: the curve goes up to it, but the point is missing.' : 'A breath of air: the point is missing.'],
+    ['corner', 'A sharp corner', newDots ? 'A slide down then up (a V), or up then down (a peak with a point).' : 'No sound of its own with the original dot sounds.'],
+    ['asymptote', 'No curve here', 'A low knock: an asymptote, or a place the function is not defined.'],
+    ['end', 'Where the curve ends', newDots ? 'A smaller bump (the end point is included) or wind (it is not).' : 'The point sound, softer.'],
+    ['slope', 'The slope sound', 'D in graph mode. After each note, a soft second note for the slope: high is rising, the middle note is flat, low is falling. Here y = x squared: the slope note climbs from low, through the middle note at the valley, to high.'],
+  ];
+}
+const QUIZ = ['up', 'down', 'peak', 'valley', 'x-axis', 'origin', 'solid', 'open', 'corner', 'asymptote', 'above', 'below'];
+let guideValues = null;
+let quizAnswer = null;
+let guideReturn = null;
+
+function openSoundGuide(values = null) {
+  guideValues = values || savedSettings?.values || {};
+  const list = $('sound-guide-list');
+  list.replaceChildren();
+  const sounds = guideSounds(guideValues.dot_sounds);
+  for (const [name, title, words] of sounds) {
+    const id = `guide-${name}`;
+    const button = el('button', { type: 'button', 'data-sound': name, 'aria-describedby': id }, `Play: ${title}`);
+    const item = el('div', { class: 'guide-item' });
+    item.append(button, el('p', { id, class: 'hint' }, words));
+    list.append(item);
+  }
+  const answers = $('sound-quiz-answers');
+  answers.replaceChildren(...QUIZ.map((name) => el('button', { type: 'button', 'data-answer': name }, sounds.find((s) => s[0] === name)[1])));
+  answers.hidden = true;
+  $('sound-quiz-result').textContent = '';
+  quizAnswer = null;
+  guideReturn = document.activeElement;
+  $('sound-guide-dialog').showModal();
+  list.querySelector('button').focus();
+}
+$('sound-guide-list').addEventListener('click', (e) => {
+  const name = e.target.closest('button')?.dataset.sound;
+  if (name) graphMode.guide(name, guideValues);
+});
+$('sound-quiz-play').addEventListener('click', () => {
+  quizAnswer = QUIZ[Math.floor(Math.random() * QUIZ.length)];
+  graphMode.guide(quizAnswer, guideValues);
+  $('sound-quiz-answers').hidden = false;
+  $('sound-quiz-result').textContent = 'Which sound was it? Choose below, or play it again with the same button.';
+  $('sound-quiz-play').textContent = 'Play a new mystery sound';
+});
+$('sound-quiz-answers').addEventListener('click', (e) => {
+  const name = e.target.closest('button')?.dataset.answer;
+  if (!name || !quizAnswer) return;
+  const title = (n) => guideSounds(guideValues.dot_sounds).find((s) => s[0] === n)[1];
+  $('sound-quiz-result').textContent = name === quizAnswer ? `Right: ${title(quizAnswer)}.` : `Not quite: that was ${title(quizAnswer)}. Play a new one when you are ready.`;
+  graphMode.guide(quizAnswer, guideValues);
+  quizAnswer = name === quizAnswer ? null : quizAnswer;
+  if (!quizAnswer) $('sound-quiz-answers').hidden = true;
+  $('sound-quiz-play').focus();
+});
+$('sound-guide-close').addEventListener('click', () => $('sound-guide-dialog').close());
+$('sound-guide-dialog').addEventListener('close', () => { if (guideReturn && document.contains(guideReturn)) guideReturn.focus(); else backToDocument(); });
+$('sound-guide-open').addEventListener('click', () => openSoundGuide(settingsFromForm()));
+
 // ---------- keys inside the document ----------
 
 doc.addEventListener('keydown', (e) => {
@@ -2049,7 +2188,18 @@ doc.addEventListener('keydown', (e) => {
     if (block?.classList.contains('graph-line')) { e.preventDefault(); exploreGraph(block); return; }
     if (block?.classList.contains('eq-line')) {
       const eq = block.querySelector('.eq');
+      // After the equation (where converting a line leaves the cursor), Enter starts a new
+      // line, as in Word; before it, Enter edits the equation. Ctrl+E edits it from anywhere.
+      if (eq && caretAfter(eq)) { e.preventDefault(); newLineAfter(block); return; }
       if (eq) { e.preventDefault(); openEquation(eq); return; }
+    }
+    // Enter again on the blank line under an equation: the equation comes down to the next
+    // line, with this line left blank between them (Settings > Writing can turn this off).
+    if (savedSettings?.values?.enter_copies_equation !== false && isBlankLine(block) && endsWithEquation(block.previousElementSibling)) {
+      e.preventDefault();
+      newLineAfter(block);
+      copyEquationDown();
+      return;
     }
   }
   // Enter on an empty list item ends the list there, as in Word.
@@ -2171,6 +2321,12 @@ const COMMANDS = {
   graphStep: () => graphCommand('step'),
   graphNextFunction: () => graphCommand('function'),
   graphClose: () => graphCommand('close'),
+  copyEquationDown,
+  soundGuide: () => openSoundGuide(),
+  settingsWriting: () => openSettings('writing'),
+  graphSlope: () => graphCommand('slope'),
+  graphLimits: () => graphCommand('limits'),
+  graphSlopeSound: () => graphCommand('slopeSound'),
   teacherMode: () => setTeacherMode(!teacherMode),
   hideLine: hideLines,
   hideWords,
@@ -2208,7 +2364,7 @@ const DOCUMENT_KEYS = {
   'Ctrl+Shift+7': 'numberedList', 'Ctrl+Enter': 'pageBreak', 'Ctrl+Alt+1': 'heading1', 'Ctrl+Alt+2': 'heading2', 'Ctrl+Alt+3': 'heading3',
   'Ctrl+Alt+0': 'normalText', 'Ctrl+Shift+E': 'toEquation', 'Ctrl+E': 'editEquation', 'Alt+=': 'insertEquation', 'Ctrl+F': 'find',
   'Ctrl+H': 'replace', F3: 'findNext', 'Shift+F3': 'findPrevious', 'Ctrl+Shift+M': 'convertMath', 'Ctrl+Shift+W': 'exportDocx',
-  F1: 'keys', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', 'Ctrl+F9': 'hideWords', 'Ctrl+Shift+F9': 'hideLine', 'Ctrl+Shift+V': 'pastePlain', 'Ctrl+PageDown': 'nextHeading', 'Ctrl+PageUp': 'previousHeading', 'Ctrl+Shift+H': 'headingList',
+  F1: 'keys', 'Ctrl+G': 'exploreGraph', 'Ctrl+Shift+G': 'insertGraph', 'Ctrl+F9': 'hideWords', 'Ctrl+Shift+F9': 'hideLine', 'Ctrl+Shift+V': 'pastePlain', F11: 'copyEquationDown', 'Ctrl+PageDown': 'nextHeading', 'Ctrl+PageUp': 'previousHeading', 'Ctrl+Shift+H': 'headingList',
 };
 
 // Without the desktop menu bar (tests in a plain browser), the menu's other shortcuts work here too.

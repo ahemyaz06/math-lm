@@ -44,10 +44,16 @@ which only matters for describing pictures. `Read me first.txt` inside explains 
   menus, **F1** lists every keyboard shortcut. In a dialog, F1 or its **Help** button explains it.
 - Type maths as plain text, such as `(x^2 - 4)/(x - 2)`, and press **Ctrl+Shift+E** to make it
   an equation. **Ctrl+Shift+R** reads the current line with its maths spelled out.
+- Working line by line: **Enter** after an equation starts a new line; **Enter** again copies
+  the equation down (with a blank line between), ready to change with **Ctrl+E**. **F11**
+  copies the equation above down at any time.
 - **Ctrl+Shift+G** inserts a graph. On an equation, **Ctrl+G** graphs it. In graph mode:
   - **J** and **K** step along the curve; **Space** plays it;
   - **period** and **comma** jump between points of interest (zeros, peaks, holes, corners, dots);
-  - **I** describes the graph; **L** plays each sound with its name; **Escape** goes back.
+  - **S** says the slope, **L** the limits from the left and the right, **D** adds a soft
+    second note for the slope after each step;
+  - **I** describes the graph; **Escape** goes back.
+- Help > Sound guide plays every sound with what it means, and has a short quiz.
 - File > Import PDF or Import LaTeX (.tex) opens course files. File > Export as Word gives
   real Word equations.
 

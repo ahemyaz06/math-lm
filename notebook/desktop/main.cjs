@@ -123,6 +123,7 @@ function buildMenu() {
       { label: '&Edit equation', accelerator: 'Ctrl+E', click: send('editEquation') },
       { label: '&Convert line or selection to equation', accelerator: 'Ctrl+Shift+E', click: send('toEquation') },
       { label: 'Convert equation to &plain text', accelerator: 'Ctrl+Shift+T', click: send('toPlainText') },
+      { label: 'Copy the equation above &down', accelerator: 'F11', click: send('copyEquationDown') },
       { label: 'Convert between plain text, &LaTeX and MathML…', accelerator: 'Ctrl+Shift+M', click: send('convertMath') },
       { label: '&Read line with equations spelled out', accelerator: 'Ctrl+Shift+R', click: send('readLine') },
     ] },
@@ -137,6 +138,9 @@ function buildMenu() {
       { label: 'Next &function (Tab)', click: send('graphNextFunction') },
       { label: '&Read the point (V)', click: send('graphReadPoint') },
       { label: '&Describe the graph (I)', click: send('graphDescribe') },
+      { label: 'S&lope here (S)', click: send('graphSlope') },
+      { label: 'Li&mits from the left and right (L)', click: send('graphLimits') },
+      { label: 'Slope s&ound on or off (D)', click: send('graphSlopeSound') },
       { label: 'Change the &step size (F)', click: send('graphStep') },
       { label: '&Back to the document (Escape)', click: send('graphClose') },
     ] },
@@ -162,13 +166,16 @@ function buildMenu() {
     ] },
     { label: '&Settings', submenu: [
       { label: '&Reading PDFs…', accelerator: 'Ctrl+,', click: send('settingsReading') },
+      { label: '&Writing…', click: send('settingsWriting') },
       { label: '&AI add-on…', click: send('settingsAi') },
       { label: '&Graph sound…', click: send('settingsSound') },
+      { label: 'Sound &guide…', click: send('soundGuide') },
       { type: 'separator' },
       { label: 'Restore &defaults', click: send('settingsReset') },
     ] },
     { label: '&Help', submenu: [
       { label: '&Keyboard shortcuts', accelerator: 'F1', click: send('keys') },
+      { label: '&Sound guide: learn the graph sounds', click: send('soundGuide') },
       { label: '&Open the user guide', click: () => shell.openPath(path.join(NOTEBOOK, 'README.md')) },
     ] },
   ];
@@ -176,7 +183,7 @@ function buildMenu() {
   // but does not register them: otherwise a key press could run its command twice.
   const pageKeys = new Set(['Ctrl+B', 'Ctrl+I', 'Ctrl+U', 'Ctrl+Shift+L', 'Ctrl+Shift+7', 'Ctrl+Enter', 'Ctrl+Alt+1', 'Ctrl+Alt+2',
     'Ctrl+Alt+3', 'Ctrl+Alt+0', 'Ctrl+Shift+E', 'Ctrl+E', 'Alt+=', 'Ctrl+F', 'Ctrl+H', 'F3', 'Shift+F3', 'Ctrl+Shift+M', 'Ctrl+Shift+W',
-    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9']);
+    'Ctrl+Shift+V', 'Ctrl+PageDown', 'Ctrl+PageUp', 'Ctrl+Shift+H', 'F1', 'Ctrl+G', 'Ctrl+Shift+G', 'Ctrl+F9', 'Ctrl+Shift+F9', 'F11']);
   for (const menu of template) for (const item of menu.submenu) if (pageKeys.has(item.accelerator)) item.registerAccelerator = false;
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
