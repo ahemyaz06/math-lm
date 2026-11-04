@@ -145,7 +145,8 @@ better. Then choose the reading model in the notebook's Settings > Reading PDFs.
   "latest release" address once; nothing about you or your documents is sent.
 - Spelling uses Windows' own spell checker on this computer; Add to dictionary adds the word
   to your Windows dictionary, which Word and Edge use too.
-- Settings and read PDFs stay in `%LOCALAPPDATA%\MathNotebook`. Your own file locations (model
+- Settings and read PDFs stay on this computer: in `%LOCALAPPDATA%\MathNotebook` (the installed
+  copy, and running from this folder), or in the `data` folder beside the portable copy's exe. Your own file locations (model
   files, a PDF folder) can go in `local-paths.json` in this folder; git leaves that file out.
 
 ## Licence
