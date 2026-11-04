@@ -29,8 +29,9 @@ add-on, which only matters for describing pictures.
   `Math Notebook.exe`. Its settings stay in a `data` folder beside it. `Read me first.txt`
   inside explains the rest.
 
-The app is not code-signed, so Windows SmartScreen may warn before it runs the setup or the
-exe: choose "More info", then "Run anyway".
+The app is not code-signed, so Windows may warn before it runs the setup or the exe.
+SmartScreen's "Windows protected your PC": choose "More info", then "Run anyway". An "Open
+File - Security Warning" dialog ("The publisher could not be verified"): choose "Run".
 
 ## Running from this folder (Windows)
 
