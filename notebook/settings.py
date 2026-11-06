@@ -52,6 +52,9 @@ def _spec():
         'reading_model': (models[0], None),          # checked against installed models by the server
         'second_model': (models[1] if len(models) > 1 else '', None),
         'pages_at_once': (int(os.environ.get('MATH_NOTEBOOK_WORKERS', '2')), [1, 2]),
+        # Each equation read from a PDF is typeset again (Tectonic) and compared with the page;
+        # a nearby reading that matches replaces it (reading_check.py). Nothing happens without Tectonic.
+        'check_readings': (True, [True, False]),
         # Graph sound (Sound Lab)
         # The calm profiles, then the voices in sound-lab/public/voices.js (instruments, beeps, game sounds)
         'sound_profile': ('gentle', ['gentle', 'warm-acoustic', 'soft-synth', 'crisp-piano', 'high-contrast', 'progress',

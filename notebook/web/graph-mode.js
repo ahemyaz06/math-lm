@@ -4,7 +4,7 @@
 // coordinate when it stops; Tab switches functions.
 import { CalculusSoundEngine } from '/sound/sound-engine.js';
 import { compileEquation, detectLandmarks, findStepEvents, formatNumber } from '/sound/graph-math.js';
-import { HIDEABLE, compileFunction, describeFunction, landmarksOf, say, setNumberStyle, spokenLabel } from './graphs.js';
+import { HIDEABLE, compileFunction, describeFunction, exactly, landmarksOf, say, setNumberStyle, spokenLabel } from './graphs.js';
 
 const STEPS = [0.1, 0.25, 0.5, 1];
 // say() rounds as Settings asks (nearest half by default); exact() is for what you chose
@@ -263,9 +263,27 @@ export class GraphMode {
   prepareFunction(start) {
     const f = this.fn;
     if (!f) return;
-    const lo = Math.max(f.lo, this.span.x[0]), hi = Math.min(f.hi, this.span.x[1]);
-    this.lo = lo; this.hi = hi;
+    let lo = Math.max(f.lo, this.span.x[0]), hi = Math.min(f.hi, this.span.x[1]);
     const own = f.graph ? landmarksOf(f.graph, this.boundary) : f.landmarks();
+    // Only where the curve is: y = 1/x on [-4.5, -0.22] is stepped from -4.5 to -0.22, not
+    // across the whole window (that started off the curve, at x = 0, and stuck at the edge).
+    const defined = (x) => f.limitAt(x).defined;
+    const N = 2000;
+    const xs = Array.from({ length: N + 1 }, (_, i) => lo + ((hi - lo) * i) / N);
+    const firstIn = xs.findIndex(defined);
+    if (firstIn >= 0) {
+      const lastIn = N - [...xs].reverse().findIndex(defined);
+      // The exact end, from the points of interest when one is there (the curve starts at -4.5).
+      const edge = (inside, outside) => {
+        let a = outside, b = inside;
+        for (let k = 0; k < 60; k += 1) { const mid = (a + b) / 2; if (defined(mid)) b = mid; else a = mid; }
+        const end = own.find((l) => l.kind === 'endpoint' && Math.abs(l.x - b) < 1e-6);
+        return end && defined(end.x) ? end.x : b;
+      };
+      if (firstIn > 0) lo = edge(xs[firstIn], xs[firstIn - 1]);
+      if (lastIn < N) hi = edge(xs[lastIn], xs[lastIn + 1]);
+    }
+    this.lo = lo; this.hi = hi;
     // A function's own dots (a piecewise jump's open end is off the curve), or any dot it passes through.
     const owner = this.index - this.functions.length + (this.graph.functions || []).length;
     const onCurve = this.dots.filter((d) => (d.owner !== null ? d.owner === owner
@@ -275,7 +293,12 @@ export class GraphMode {
     const hidden = new Set(this.graph.hidden || []);
     this.landmarks = [...own.map((l) => ({ ...l, label: spokenLabel(l) })), ...onCurve]
       .filter((l) => !hidden.has(l.kind) && l.x >= lo - 1e-9 && l.x <= hi + 1e-9).sort((a, b) => a.x - b.x);
-    if (start) this.x = this.onGrid(Math.max(lo, Math.min(hi, 0)));
+    if (start) {
+      // At x = 0 when the curve is there, otherwise at the first step on the curve.
+      const at = this.onGrid(Math.max(lo, Math.min(hi, 0)));
+      const firstStep = Math.ceil((lo - 1e-9) / this.step) * this.step;
+      this.x = at >= lo - 1e-9 && at <= hi + 1e-9 ? at : firstStep <= hi ? firstStep : lo;
+    }
     this.prevY = null;
     this.prevSlope = null;
   }
@@ -448,8 +471,13 @@ export class GraphMode {
   }
 
   describe() {
-    // Functions with their formula are described afresh, numbers rounded as Settings asks;
-    // a stored description (a student copy, a PDF graph) has its numbers rounded the same way.
+    // Functions with their formula are described afresh, a stored description (a student copy,
+    // a PDF graph) as written. Its points have two decimals whatever Settings asks for moving
+    // along the curve: a zero at minus 0.67 said "minus 0.5" was a wrong answer (owner's report).
+    this.speak(exactly(() => this.description()));
+  }
+
+  description() {
     const span = this.span;
     const own = this.functions.filter((f) => f.compiled);
     const hiddenKinds = new Set(this.graph.hidden || []);
@@ -459,7 +487,7 @@ export class GraphMode {
       : roundWords(this.graph.summary || '');
     const parts = [words];
     if (this.verticals.length) parts.push(`${this.verticals.length} vertical ${this.verticals.length === 1 ? 'line is' : 'lines are'} not traced, because a vertical line is not a function of x.`);
-    this.speak(parts.join(' ').trim() || 'No description.');
+    return parts.join(' ').trim() || 'No description.';
   }
 
   // The same actions from the Graph menu (for mouse users, and to find them by name).

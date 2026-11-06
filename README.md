@@ -6,7 +6,8 @@ real maths that NVDA and MathCAT read aloud. Open course PDFs and LaTeX files. E
 by sound. Hand in Word or PDF files that everyone else can open.
 
 Everything runs on your own computer. Nothing is sent anywhere, except one question to GitHub
-when you check for a newer version (below). It is a personal project of
+when you check for a newer version (below), and, only if you install Tectonic for the optional
+equation check, Tectonic's own one-time download of TeX packages. It is a personal project of
 one student, made for one calculus course first; see "What is tested and what is not" before
 relying on it.
 
@@ -21,6 +22,8 @@ Each section in a sentence; the details follow in the same order.
 - **First minutes in the notebook**: the keys for writing, equations, comments, intervals,
   spelling and graphs.
 - **The optional AI add-on**: only for describing pictures; how to add it.
+- **Checking equations with Tectonic**: an optional double check of PDF reading, installed separately.
+- **Braille**: braille files with BrailleBlaster.
 - **What is tested and what is not**: what the automatic tests check, what has been heard with
   NVDA, and what has not been tried.
 - **Privacy and safety**, **Licence**.
@@ -34,6 +37,8 @@ Each section in a sentence; the details follow in the same order.
 | [`recognition-lab/`](recognition-lab/README.txt) | **Recognition Lab**: reads graphs from pictures and PDF pages. The notebook uses its PDF reading. | Developers |
 
 The notebook needs the other two folders, so keep them together.
+
+What has changed since the last release: [`notebook/CHANGELOG.md`](notebook/CHANGELOG.md).
 
 ## Download it (Windows)
 
@@ -119,6 +124,27 @@ recognition-lab\.venv\Scripts\python.exe recognition-lab\download_qwen35_9b.py
 The first gets the llama.cpp runner and Qwen3-VL-8B; the second adds Qwen3.5-9B, which reads
 better. Then choose the reading model in the notebook's Settings > Reading PDFs.
 
+## Checking equations with Tectonic (optional)
+
+The notebook can check every equation it reads from a PDF: it typesets the reading again with
+[Tectonic](https://tectonic-typesetting.github.io/) and compares it with the page, and when
+they differ it tries readings close to it and keeps one only if it matches the page exactly.
+**Tectonic was tested with Math Notebook (version 0.17.0) but is not bundled** with it or with
+the setup. Without it, PDFs are read exactly as before; nothing is checked. If you want
+everything double-checked, install Tectonic separately
+([installation](https://tectonic-typesetting.github.io/book/latest/installation/); for Windows,
+the zip from its [releases page](https://github.com/tectonic-typesetting/tectonic/releases))
+and put `tectonic.exe` on your PATH or set the environment variable `TECTONIC` to its full path.
+The switch is Settings > Reading PDFs, "Check each equation". Details are in the
+[notebook's guide](notebook/README.md#converting-a-pdf).
+
+## Braille
+
+File > Export as braille (BRF) makes a braille ready file with
+[BrailleBlaster](https://www.brailleblaster.org/) (free, from the American Printing House), which
+has to be installed. Every equation goes to it as MathML; for Nemeth maths, choose UEB with
+Nemeth in BrailleBlaster's Translation settings. The approach follows Owen Petronick's Braille Check.
+
 ## What is tested and what is not
 
 - **Automatic tests** drive the real app with key presses and check what it does and says
@@ -134,6 +160,13 @@ better. Then choose the reading model in the notebook's Settings > Reading PDFs.
 - **Course material**: the PDF reader was built and checked on one calculus course's LaTeX
   PDFs and a few textbooks. PDFs made other ways (Word, scans) are less sure, and an
   unusual layout can be read wrongly without a warning.
+- **Checking equations with Tectonic** was tried with Tectonic 0.17.0 on one calculus course's
+  LaTeX PDFs (868 equations: 863 matched as read, 1 corrected, 4 misreadings caught but not
+  corrected) and on thousands of made-up calculus equations. Tectonic is not bundled; it is
+  not useful for PDFs made with Word or scanned.
+- **Braille** was tried with BrailleBlaster 3.2.5 (UEB and UEB with Nemeth); the automatic tests
+  use a stand-in. Seven LaTeX files were read back from their braille by a program, which found
+  the missing list numbers (now fixed). The braille has not been checked by a braille reader.
 - The full list is in the guide's "Limits, and what is not tested".
 
 ## Privacy and safety
@@ -143,6 +176,9 @@ better. Then choose the reading model in the notebook's Settings > Reading PDFs.
 - The app goes online only to check for a newer version: when you choose Help > Check for
   updates, or at each start if you turned that on in Settings > Writing. It asks GitHub's public
   "latest release" address once; nothing about you or your documents is sent.
+- If you install Tectonic for the equation check, Tectonic itself downloads the TeX packages it
+  needs from its own servers the first time it typesets. Your documents are not sent; the
+  equations are typeset on your computer.
 - Spelling uses Windows' own spell checker on this computer; Add to dictionary adds the word
   to your Windows dictionary, which Word and Edge use too.
 - Settings and read PDFs stay on this computer: in `%LOCALAPPDATA%\MathNotebook` (the installed

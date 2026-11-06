@@ -197,8 +197,14 @@ def _features(points, y_step):
             continue
         new = 1 if dy > 0 else -1
         if direction and new != direction:
-            turns.append({'kind': 'peak' if direction > 0 else 'valley', 'at': list(points[k - 1])})
+            turns.append({'kind': 'peak' if direction > 0 else 'valley', 'at': list(points[k - 1]), 'index': k - 1})
         direction = new
+    # Where the drawn curve stops (often at an arrowhead, whose last points bend back) is its end,
+    # not a peak or a valley: no turns in the last few points or the last 3% of its width.
+    width = abs(points[-1][0] - points[0][0]) if len(points) > 1 else 0
+    turns = [{'kind': t['kind'], 'at': t['at']} for t in turns
+             if 2 < t['index'] < len(points) - 3
+             and min(abs(t['at'][0] - points[0][0]), abs(t['at'][0] - points[-1][0])) > .03 * width]
     # Drop wiggles smaller than 1% of a grid step.
     kept = []
     for t in turns:

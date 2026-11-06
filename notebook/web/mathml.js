@@ -298,7 +298,10 @@ export function mathmlToLatex(source, { useAnnotation = true } = {}) {
 }
 
 export function latexToMathml(latex, display = false) {
-  return temml.renderToString(latex, { displayMode: display, annotate: true, throwOnError: true, xml: true });
+  // Temml has no \mbox or \hbox; in maths they are \text (\lim f(x) \mbox{ and } \lim g(x)).
+  // Nor nicefrac's \nicefrac{\pi}{2}, a small fraction: \tfrac.
+  const source = latex.replace(/\\[mh]box(?![A-Za-z])\s*\{/g, '\\text{').replace(/\\nicefrac(?![A-Za-z])/g, '\\tfrac');
+  return temml.renderToString(source, { displayMode: display, annotate: true, throwOnError: true, xml: true });
 }
 
 // ---------- MathML -> OMML (Word's own equations) ----------

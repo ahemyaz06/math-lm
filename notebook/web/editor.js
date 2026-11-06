@@ -5,6 +5,7 @@ import { parseBlocks, tableCells } from './markdown.js';
 import { plainToLatex, latexToPlain, splitComment, splitDomain } from './equation.js';
 import { mathmlToLatex, latexToMathml } from './mathml.js';
 import { makeDocx } from './docx.js';
+import { brailleHtml } from './braille.js';
 import { makeGraph, studentGraph, HIDEABLE, parseCondition } from './graphs.js';
 import { texToBlocks, graphFromPgfplots, graphToPgfplots } from './tex.js';
 import { GraphMode } from './graph-mode.js';
@@ -348,9 +349,9 @@ function serialize() {
 
 const ALLOWED_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'P', 'DIV', 'SPAN', 'STRONG', 'EM', 'B', 'I', 'U', 'BR', 'HR', 'TABLE', 'TBODY', 'THEAD', 'TR', 'TH', 'TD', 'UL', 'OL', 'LI']);
 const ALLOWED_ATTRS = new Set(['class', 'data-latex', 'data-display', 'data-graph-id', 'data-warning', 'data-page', 'data-placeholder', 'data-figure', 'scope',
-  'data-teacher', 'data-student-note']);
+  'data-teacher', 'data-student-note', 'start', 'data-level']);
 // Pasted from web pages and other programs: only the structure is kept, never their styles or classes.
-const PASTE_ATTRS = new Set(['scope']);
+const PASTE_ATTRS = new Set(['scope', 'start']);
 
 // Rebuild HTML from an allow-list, so a notebook file or a paste can never run code.
 // MathML in it (pasted from a web page) becomes a real equation.
@@ -452,12 +453,17 @@ function blocksToNodes(blocks) {
       });
       out.push(table);
     } else if (b.type === 'list') {
-      // Items carry their level; nested levels become lists inside the item above.
+      // Items carry their level; nested levels become lists inside the item above. A list that
+      // goes on after a picture starts at its next number, at the level it stopped at.
       const root = el(b.ordered ? 'ol' : 'ul');
+      const base = b.items[0]?.level || 0;
+      if (b.start && b.ordered) root.start = b.start;
+      if (base) root.dataset.level = base;
       const stack = [root];
       for (const item of b.items) {
-        while (stack.length - 1 > item.level) stack.pop();
-        while (stack.length - 1 < item.level) {
+        const level = Math.max(0, item.level - base);
+        while (stack.length - 1 > level) stack.pop();
+        while (stack.length - 1 < level) {
           const parentItem = stack.at(-1).lastElementChild || stack.at(-1).appendChild(el('li'));
           const sub = el(b.ordered ? 'ol' : 'ul');
           parentItem.append(sub);
@@ -492,9 +498,10 @@ async function importTex() {
   setDirty(true);
   const equations = nodes.reduce((n, node) => n + (node.classList?.contains('eq') ? 1 : node.querySelectorAll?.('.eq').length || 0), 0);
   const graphCount = nodes.filter((n) => n.classList?.contains('graph-line')).length;
+  const name = file.path.split(/[\\/]/).pop();
   doc.focus();
   placeCaretIn(nodes[0] || doc);
-  say(`Imported ${file.path.split(/[\\/]/).pop()}: ${equations} ${equations === 1 ? 'equation' : 'equations'}${graphCount ? `, ${graphCount} ${graphCount === 1 ? 'graph' : 'graphs'} you can explore by sound` : ''}.`
+  say(`Imported ${name}: ${equations} ${equations === 1 ? 'equation' : 'equations'}${graphCount ? `, ${graphCount} ${graphCount === 1 ? 'graph' : 'graphs'} you can explore by sound` : ''}.`
     + (result.notes.length ? ` ${result.notes.length} ${result.notes.length === 1 ? 'note' : 'notes'} on what could not be read; F8 goes to them.` : ''));
 }
 
@@ -580,8 +587,12 @@ function documentBlocks(root = doc) {
     if (node.nodeType !== Node.ELEMENT_NODE) continue;
     const tag = node.tagName;
     if (/^H[1-6]$/.test(tag)) blocks.push({ type: 'heading', level: Number(tag[1]), runs: inlineRuns(node) });
-    else if (tag === 'UL' || tag === 'OL') blocks.push(listBlocks(node));
-    else if (tag === 'HR') blocks.push({ type: 'pageBreak' });
+    else if (tag === 'UL' || tag === 'OL') {
+      // A list that goes on after a picture keeps its first number and its level.
+      const list = listBlocks(node, Number(node.dataset.level) || 0);
+      if (tag === 'OL' && node.start > 1) list.start = node.start;
+      blocks.push(list);
+    } else if (tag === 'HR') blocks.push({ type: 'pageBreak' });
     else if (tag === 'TABLE') {
       const rows = [...node.querySelectorAll('tr')].map((tr) => [...tr.children].map((cell) => inlineRuns(cell)));
       blocks.push({ type: 'table', rows, header: Boolean(node.querySelector('tr')?.querySelector('th')) });
@@ -613,6 +624,23 @@ async function exportPdf() {
   if (!desktop) { say('Exporting needs the desktop app.'); return; }
   const saved = await desktop.exportPdf({ name: `${docName}.pdf`, notebook: serialize() });
   if (saved) say(`Exported ${saved.split(/[\\/]/).pop()}. It opens like any PDF; this notebook is inside it, so Math Notebook opens it exactly. Equations in a PDF are hard for screen readers; for reading with NVDA, share the Word file too.`);
+}
+
+// File > Export as braille: BrailleBlaster makes the .brf from the document's headings, text and
+// MathML equations (braille.js, braille.py). It has to be installed; the notebook says so if not.
+async function exportBraille() {
+  if (!desktop) { say('Exporting needs the desktop app.'); return; }
+  const page = brailleHtml(documentBlocks(), docName);
+  say('Making braille with BrailleBlaster. A long document takes a minute or two.');
+  const result = await desktop.exportBraille({ name: `${docName}.brf`, page });
+  if (!result) { say('Braille export cancelled.'); return; }
+  if (result.error) { say(result.error); return; }
+  const name = result.path.split(/[\\/]/).pop();
+  const odd = result.not_six_dot || [];
+  say((result.nemeth
+    ? `Exported ${name}: UEB with Nemeth maths, as BrailleBlaster is set.`
+    : `Exported ${name} in ${result.standard}, as BrailleBlaster is set. For Nemeth maths, choose UEB with Nemeth (UEB-PLUS-NEMETH) in BrailleBlaster's Translation settings and export again.`)
+    + (odd.length ? ` ${odd.length} ${odd.length === 1 ? 'line has' : 'lines have'} a cell that is not 6-dot braille (BrailleBlaster could not braille something there, often a matrix): line ${odd.join(', ')} of the file.` : ''));
 }
 
 // ---------- caret and blocks ----------
@@ -674,16 +702,26 @@ let equationTarget = null;
 let equationRange = null;
 let latexMode = false;
 
+// The equation as plain text, or null when plain text cannot hold it (a piecewise function from
+// a PDF or .tex file): then it is edited as LaTeX, so pressing Enter cannot break it.
+const NO_PLAIN = 'Plain text cannot write all of this equation, so it is shown as LaTeX.';
+function plainFor(latex) {
+  const plain = latexToPlain(latex);
+  try { plainToLatex(splitComment(plain).code); return plain; } catch { return null; }
+}
+
 function openEquation(target) {
   equationTarget = target;
   const sel = getSelection();
   equationRange = sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null;
-  latexMode = false;
   const input = $('equation-text');
-  input.value = target ? latexToPlain(target.dataset.latex) : '';
-  $('equation-label').textContent = 'Equation as plain text';
+  const plain = target ? plainFor(target.dataset.latex) : '';
+  latexMode = plain === null;
+  input.value = latexMode ? target.dataset.latex : plain;
+  $('equation-label').textContent = latexMode ? 'Equation as LaTeX' : 'Equation as plain text';
   $('equation-error').textContent = '';
   preview();
+  if (latexMode) $('equation-error').textContent = NO_PLAIN;
   $('equation-dialog').showModal();
   input.focus();
 }
@@ -752,8 +790,10 @@ function preview() {
 function toggleLatex() {
   try {
     const latex = currentLatex();
+    const plain = latexMode ? plainFor(latex) : null;
+    if (latexMode && plain === null) { $('equation-error').textContent = NO_PLAIN; say(NO_PLAIN); return; }
     latexMode = !latexMode;
-    $('equation-text').value = latexMode ? latex : latexToPlain(latex);
+    $('equation-text').value = latexMode ? latex : plain;
     $('equation-label').textContent = latexMode ? 'Equation as LaTeX' : 'Equation as plain text';
     say(latexMode ? `LaTeX: ${latex}` : `Plain text: ${$('equation-text').value}`);
     preview();
@@ -1394,6 +1434,33 @@ function copyEquationDown() {
 }
 
 // The cursor is just after this equation (nothing but spaces between).
+// The caret is right beside the equation: only spaces between them, after it or before it.
+function caretBeside(eq) {
+  const sel = getSelection();
+  if (!eq || !sel.rangeCount || !sel.isCollapsed) return false;
+  const caret = sel.getRangeAt(0);
+  const between = document.createRange();
+  if (caret.compareBoundaryPoints(Range.START_TO_START, (between.setStartAfter(eq), between)) >= 0) {
+    between.setEnd(caret.startContainer, caret.startOffset);
+  } else {
+    between.setStart(caret.startContainer, caret.startOffset);
+    between.setEndBefore(eq);
+  }
+  return !between.toString().trim();
+}
+
+// The caret is on the block's last line (down) or first line (up), as it is shown.
+function onEdgeLine(block, down) {
+  if (!block) return false;
+  const sel = getSelection();
+  if (!sel.rangeCount) return false;
+  const rects = [...sel.getRangeAt(0).getClientRects()];
+  const caret = rects[0];
+  if (!caret || !caret.height) return true; // an empty line, or a place without a box: one line
+  const box = block.getBoundingClientRect();
+  return down ? box.bottom - caret.bottom < caret.height * .8 : caret.top - box.top < caret.height * .8;
+}
+
 function caretAfter(eq) {
   const sel = getSelection();
   if (!sel.rangeCount || !sel.isCollapsed) return false;
@@ -2052,6 +2119,15 @@ function openStudentGraph() {
   (hasFormula ? $('sg-formula') : $('sg-zeros')).focus();
 }
 
+// The equations in root that are a graph's own formula: the same maths, however it is spaced
+// and whatever it is called (f(x) = x^2 - 2 in the problem, y = x^2 - 2 graphed).
+function formulaEquations(graph, root = doc) {
+  const same = (latex) => latexToPlain(latex).replace(/\s+/g, '').replace(/^[A-Za-z]('*)(\([A-Za-z]\))?=/, '');
+  const formulas = new Set([...(graph.functions || []).map((f) => f.latex), ...(graph.equations || []).map((e) => e.text ?? e)]
+    .filter(Boolean).map(same));
+  return [...root.querySelectorAll('.eq')].filter((eq) => formulas.has(same(eq.dataset.latex)));
+}
+
 function studentNote(opts) {
   const parts = [...(opts.hideFormula ? ['the formula'] : []), ...(opts.hide || []).map((k) => HIDEABLE[k].name)];
   return parts.length ? `${parts.join(', ')} hidden.` : '';
@@ -2069,7 +2145,11 @@ $('student-graph-form').addEventListener('submit', (e) => {
   doc.focus();
   placeCaretIn(studentGraphLine);
   setDirty(true);
-  say(note ? `For students: ${note}` : 'Students get the whole graph.');
+  const source = opts.hideFormula ? formulaEquations(graph) : [];
+  const said = source.map((eq) => latexToPlain(eq.dataset.latex)).join('; ');
+  const blanked = source.length === 1 ? ` The equation with its formula, ${said}, is a blank for students too, with its comment.`
+    : source.length ? ` The ${source.length} equations with its formula (${said}) are blanks for students too, with their comments.` : '';
+  say(note ? `For students: ${note}${blanked}` : 'Students get the whole graph.');
 });
 $('student-graph-dialog').addEventListener('close', () => { if ($('student-graph-dialog').returnValue !== 'save') doc.focus(); $('student-graph-dialog').returnValue = ''; });
 
@@ -2091,6 +2171,13 @@ function studentCopy() {
   for (const line of root.querySelectorAll('[data-graph-id]')) {
     const graph = source.graphs.get(line.dataset.graphId);
     if (!graph) continue;
+    // A graph whose formula is hidden: the equation it was made from (Ctrl+G on y = x^2 - 2)
+    // would give the answer away, so it is blanked too, with its comment.
+    for (const eq of graph.student?.hideFormula ? formulaEquations(graph, root) : []) {
+      const comment = eq.closest('.eq-line')?.querySelector('.comment');
+      if (comment) comment.remove();
+      eq.replaceWith(document.createTextNode('______'));
+    }
     const id = newId();
     const copy = studentGraph(graph);
     copyGraphs.set(id, copy);
@@ -2664,8 +2751,61 @@ $('sound-guide-open').addEventListener('click', () => openSoundGuide(settingsFro
 
 // ---------- keys inside the document ----------
 
+// A graph's line is its description, written by the notebook. Typing there starts a new line
+// after the graph (as typing after a table in Word); its words cannot be changed one by one,
+// and the whole line selected and deleted removes the graph.
+doc.addEventListener('beforeinput', (e) => {
+  const sel = getSelection();
+  if (!sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  const graphOf = (n) => (n?.nodeType === 1 ? n : n?.parentElement)?.closest?.('.graph-line') || null;
+  const line = graphOf(range.startContainer);
+  if (line && line === graphOf(range.endContainer)) {
+    if (e.inputType === 'insertParagraph' || e.inputType === 'insertLineBreak') return;
+    e.preventDefault();
+    if (e.inputType.startsWith('insert')) {
+      const next = line.nextElementSibling;
+      const p = next && isBlankLine(next) ? next : newLineAfter(line);
+      placeCaretIn(p);
+      const text = e.data ?? e.dataTransfer?.getData('text/plain') ?? '';
+      if (text) document.execCommand('insertText', false, text);
+    } else if (e.inputType.startsWith('delete')) {
+      if (!range.collapsed && range.toString().trim() === line.textContent.trim()) {
+        const p = el('p');
+        p.append(el('br'));
+        line.replaceWith(p);
+        graphs.delete(line.dataset.graphId);
+        placeCaretIn(p);
+        setDirty(true);
+        say('Graph deleted.');
+      } else say("A graph's description cannot be changed. Select the whole line to delete the graph.");
+    }
+    return;
+  }
+  // Backspace at the start of the line after a graph, or Delete at the end of the line before
+  // one, would join that line and the graph's.
+  const block = currentBlock();
+  const back = e.inputType === 'deleteContentBackward', ahead = e.inputType === 'deleteContentForward';
+  const graph = back ? block?.previousElementSibling : ahead ? block?.nextElementSibling : null;
+  if (!range.collapsed || !graph?.classList.contains('graph-line')) return;
+  const side = document.createRange();
+  side.selectNodeContents(block);
+  if (back) side.setEnd(range.startContainer, range.startOffset); else side.setStart(range.startContainer, range.startOffset);
+  if (side.toString() !== '' && !isBlankLine(block)) return;
+  e.preventDefault();
+  if (isBlankLine(block)) { block.remove(); placeCaretIn(graph); setDirty(true); say('Empty line removed.'); }
+  else say(`The line ${back ? 'above' : 'below'} is a graph; it stays as it is.`);
+});
+
 doc.addEventListener('keydown', (e) => {
   const plainKey = !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey;
+  // Down arrow on the last line, a graph: a new line after it, as Word does after a table.
+  if (e.key === 'ArrowDown' && plainKey && currentBlock()?.classList.contains('graph-line') && !currentBlock().nextElementSibling) {
+    e.preventDefault();
+    newLineAfter(currentBlock());
+    say('New line after the graph.');
+    return;
+  }
   // Right and Left go into an equation, one symbol at a time (Settings > Writing).
   if ((e.key === 'ArrowRight' || e.key === 'ArrowLeft') && plainKey && !openText && savedSettings?.values?.step_into_equations !== false) {
     const eq = equationNextTo(e.key === 'ArrowRight');
@@ -2700,13 +2840,23 @@ doc.addEventListener('keydown', (e) => {
     }
     // Enter elsewhere is always a new line; Shift+Enter (or F11) copies the equation above down.
   }
-  // Up and Down from a blank line or an equation line onto a line that is only an equation:
-  // Chromium's caret does not go there by itself (it stays put), so it is moved here.
+  // Up and Down onto an equation line (with or without a comment after it), from any line:
+  // Chromium's caret does not stop at the equation (it stays put, or lands inside the comment,
+  // where the equation is neither said nor reachable), so it is put just after the equation.
+  // In a paragraph that wraps, only its first line (Up) or last line (Down) leaves it.
   if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.shiftKey && !e.ctrlKey && !e.altKey && getSelection().isCollapsed) {
     const block = currentBlock();
     const target = e.key === 'ArrowUp' ? block?.previousElementSibling : block?.nextElementSibling;
     const onlyEquation = (b) => b?.classList.contains('eq-line') && b.querySelector('.eq');
-    if ((isBlankLine(block) || onlyEquation(block)) && (onlyEquation(target) || (onlyEquation(block) && isBlankLine(target)))) {
+    // Up inside an equation line whose comment wraps: on reaching the shown line that holds the
+    // equation, the caret stops after the equation, not in the middle of the comment.
+    if (e.key === 'ArrowUp' && onlyEquation(block) && !onEdgeLine(block, false)) {
+      setTimeout(() => {
+        const eq = block.querySelector('.eq');
+        if (currentBlock() === block && onEdgeLine(block, false) && !caretBeside(eq)) placeCaretAfter(eq);
+      }, 0);
+    }
+    if ((onlyEquation(target) && onEdgeLine(block, e.key === 'ArrowDown')) || (onlyEquation(block) && isBlankLine(target))) {
       e.preventDefault();
       if (onlyEquation(target)) placeCaretAfter(target.querySelector('.eq')); else placeCaretIn(target);
       return;
@@ -2800,6 +2950,7 @@ const COMMANDS = {
   exportHtml,
   exportDocx,
   exportPdf,
+  exportBraille,
   print: () => (desktop ? desktop.print() : window.print()),
   pastePlain,
   find: () => openFind(false),
@@ -2938,9 +3089,13 @@ let announcedEquation = null;
 let announceTimer = null;
 function announceEquation() {
   clearTimeout(announceTimer);
+  // Away from it, even for a moment (Up then Down quickly), it is said again on coming back.
+  if (!caretBeside(equationAtCaret())) announcedEquation = null;
   announceTimer = setTimeout(() => {
     if (savedSettings?.values?.say_equations === false || document.activeElement !== doc) return;
-    const eq = equationAtCaret();
+    // Said when the caret comes beside it; reading on into its comment and coming back says it again.
+    let eq = equationAtCaret();
+    if (eq && !caretBeside(eq)) eq = null;
     if (eq === announcedEquation) return;
     announcedEquation = eq;
     if (!eq) return;

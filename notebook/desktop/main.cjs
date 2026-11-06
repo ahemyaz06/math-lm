@@ -85,6 +85,7 @@ function buildMenu() {
       { label: 'Export as &Word document…', accelerator: 'Ctrl+Shift+W', click: send('exportDocx') },
       { label: 'Export as P&DF…', click: send('exportPdf') },
       { label: 'Export as w&eb page…', click: send('exportHtml') },
+      { label: 'Export as &braille (BRF)…', click: send('exportBraille') },
       { label: '&Print…', accelerator: 'Ctrl+P', click: send('print') },
       { type: 'separator' },
       { label: 'E&xit', role: 'quit' },
@@ -247,6 +248,16 @@ function registerFileHandlers() {
     fs.writeFileSync(result.filePath, Buffer.from(bytes));
     return result.filePath;
   });
+  // Braille: the page's XHTML, made into a .brf by BrailleBlaster (notebook/braille.py).
+  ipcMain.handle('export-braille', async (_event, { name, page }) => {
+    const result = await dialog.showSaveDialog(win, { title: 'Export as braille', defaultPath: name, filters: [{ name: 'Braille ready file', extensions: ['brf'] }] });
+    if (result.canceled) return null;
+    const response = await fetch(`${serverUrl}api/braille`, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: result.filePath, page }) });
+    const answer = await response.json().catch(() => ({}));
+    if (!response.ok) return { error: answer.error || 'The braille could not be made.' };
+    return answer;
+  });
   ipcMain.handle('export-pdf', async (_event, { name, notebook }) => {
     const result = await dialog.showSaveDialog(win, { title: 'Export as PDF', defaultPath: name, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
     if (result.canceled) return null;
@@ -283,9 +294,11 @@ async function createWindow() {
     width: 1200, height: 900, title: 'Math Notebook', show: false,
     webPreferences: { preload: path.join(__dirname, 'preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  // Stay on the local reader; links to anything else open in the normal browser.
-  win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(serverUrl)) { event.preventDefault(); shell.openExternal(url); } });
-  win.webContents.setWindowOpenHandler(({ url }) => { shell.openExternal(url); return { action: 'deny' }; });
+  // Stay on the local reader; web links (https only) open in the normal browser. Anything else
+  // (file:, javascript:, a program's own link) is not opened at all.
+  const openOutside = (url) => { if (/^https:\/\//i.test(url)) shell.openExternal(url); };
+  win.webContents.on('will-navigate', (event, url) => { if (!url.startsWith(serverUrl)) { event.preventDefault(); openOutside(url); } });
+  win.webContents.setWindowOpenHandler(({ url }) => { openOutside(url); return { action: 'deny' }; });
   // The Applications key (or right click) on a misspelled word lists corrections, as in Word.
   win.webContents.on('context-menu', (_event, params) => {
     const items = [];

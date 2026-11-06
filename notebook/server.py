@@ -9,6 +9,7 @@ import urllib.parse
 import webbrowser
 
 import attachments
+import braille
 import notebook_core as core
 import settings as app_settings
 import spelling
@@ -184,6 +185,20 @@ class Handler(BaseHTTPRequestHandler):
                     return self._error(400, 'Only a Math Notebook document can be attached to a PDF.')
                 path.write_bytes(attachments.attach(path.read_bytes(), notebook))
                 return self._send(200, {'attached': True})
+            if parts == ['api', 'braille']:
+                # Braille (.brf) of the document, made by BrailleBlaster (braille.py).
+                request = json.loads(body.decode('utf-8'))
+                path = Path(request['path'])
+                if path.suffix.lower() != '.brf' or not isinstance(request.get('page'), str):
+                    return self._error(400, 'Braille is written to a .brf file.')
+                try:
+                    used = braille.export(request['page'], path)
+                except LookupError as exc:
+                    return self._error(503, str(exc))
+                except RuntimeError as exc:
+                    return self._error(500, str(exc))
+                return self._send(200, {'path': str(path), 'standard': used, 'nemeth': used == braille.NEMETH,
+                                        'not_six_dot': braille.not_six_dot(path)})
             if parts == ['api', 'open-path']:
                 path = Path(json.loads(body.decode('utf-8'))['path'])
                 if path.suffix.lower() != '.pdf' or not path.is_file():

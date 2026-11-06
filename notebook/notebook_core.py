@@ -504,6 +504,54 @@ def _mostly_text(page, bbox):
     return len(inside) >= 4 and len(upright) >= 2 and len(flat) >= 2 and not curves
 
 
+def _drawing_box(page, bbox):
+    """The drawing in a box that is also full of text (the inspector's box around a graph took
+    in the formula above it): the drawing and its labels only, or None if there is no drawing."""
+    regions = [r for r in pdf_text_reader._drawing_regions(page, []) if _contains(bbox, r)]
+    if not regions:
+        return None
+    box = [max(bbox[0], min(r[0] for r in regions) - 15), max(bbox[1], min(r[1] for r in regions) - 12),
+           min(bbox[2], max(r[2] for r in regions) + 15), min(bbox[3], max(r[3] for r in regions) + 12)]
+    chars = [c for c in page.chars if c['text'].strip()]
+
+    def inside(c):
+        return box[0] <= (c['x0'] + c['x1']) / 2 <= box[2] and box[1] <= (c['top'] + c['bottom']) / 2 <= box[3]
+
+    def run_from(c):
+        """The characters joined to c along its line by gaps no wider than a space."""
+        line = sorted((d for d in chars if abs(d['bottom'] - c['bottom']) < .3 * c['size']), key=lambda d: d['x0'])
+        k = line.index(c)
+        lo = hi = k
+        while lo > 0 and line[lo]['x0'] - line[lo - 1]['x1'] < .8 * c['size']:
+            lo -= 1
+        while hi < len(line) - 1 and line[hi + 1]['x0'] - line[hi]['x1'] < .8 * c['size']:
+            hi += 1
+        return line[lo:hi + 1]
+    # A sentence running out of the box ("Domain: R = ...") is text: the box's edge moves off its
+    # line. A label the box cuts ("Tange|nt Line") is taken in whole.
+    for _ in range(20):
+        changed = False
+        for c in [c for c in chars if inside(c)]:
+            run = run_from(c)
+            out = [d for d in run if not inside(d)]
+            if not out:
+                continue
+            if max(d['x1'] for d in out) - min(d['x0'] for d in out) > 6 * c['size']:
+                top, bottom = min(d['top'] for d in run), max(d['bottom'] for d in run)
+                if top - box[1] < box[3] - bottom:
+                    box[1] = bottom + .5
+                else:
+                    box[3] = top - .5
+            else:
+                box = [min(box[0], min(d['x0'] for d in run)), min(box[1], min(d['top'] for d in run)),
+                       max(box[2], max(d['x1'] for d in run)), max(box[3], max(d['bottom'] for d in run))]
+            changed = True
+            break
+        if not changed:
+            break
+    return box if box[2] - box[0] >= 30 and box[3] - box[1] >= 30 else None
+
+
 def read_by_text(source, number, found, pdf_text, math_fonts):
     """The page rebuilt from the PDF's own characters (pdf_text_reader), no AI. Pictures get
     their place marked and wait in the picture queue; exactly read graphs are filled in now."""
@@ -511,10 +559,21 @@ def read_by_text(source, number, found, pdf_text, math_fonts):
     started = time.perf_counter()
     with pdfplumber.open(str(source), pages=[number]) as pdf:
         page = pdf.pages[0]
-        keep = [f for f in found if f['exact'] or f.get('embedded') or not _mostly_text(page, f['bbox'])]
+        keep = []
+        # A drawing in a box full of text was dropped as text, and its labels came out as
+        # one-letter equations. When the AI describes pictures it is kept, cut to the drawing;
+        # otherwise the text reader says a drawing is there and lists its labels.
+        describe = app_settings.ai_enabled() and app_settings.get('describe_pictures')
+        for f in found:
+            if f['exact'] or f.get('embedded') or not _mostly_text(page, f['bbox']):
+                keep.append(f)
+            elif describe and (trimmed := _drawing_box(page, f['bbox'])):
+                f['bbox'] = trimmed
+                keep.append(f)
         marks = [{'bbox': f['bbox'], 'marker': '[FIGURE type=coordinate_graph]' if f['exact'] else '[FIGURE type=other]'}
                  for f in keep]
         result = pdf_text_reader.read_page(page, marks)
+        checked = check_readings(page, result)
     before = result['markdown'].split('\n')
     markdown = drop_page_number(result['markdown'], pdf_text)
     after = markdown.split('\n')
@@ -534,8 +593,32 @@ def read_by_text(source, number, found, pdf_text, math_fonts):
               'method': 'text', 'reader_version': pdf_text_reader.VERSION, 'reader_notes': notes,
               'model': None, 'prompt_version': PROMPT_VERSION, 'has_text_layer': True, 'math_fonts': math_fonts,
               'seconds': round(time.perf_counter() - started, 2)}
+    if checked:
+        record['typeset_check'] = checked
     record['check'] = page_check(record)
     return record
+
+
+def check_readings(page, result):
+    """Each equation the reader read, typeset again and compared with the page (reading_check);
+    readings that a nearby one matches better are replaced in result['markdown']. Returns how
+    many were the same, fixed, or still different, or None when not checked (the setting is
+    off, Tectonic is not there, or the check failed: the reading then stays as it is)."""
+    if not app_settings.get('check_readings') or not result.get('equations'):
+        return None
+    try:
+        import reading_check
+        if not reading_check.find_tectonic():
+            return None
+        results = reading_check.check_page(page, result['equations'])
+        result['markdown'] = reading_check.fix_markdown(result['markdown'], result['equations'], results)
+        counts = {}
+        for verdict, _latex in results:
+            counts[verdict] = counts.get(verdict, 0) + 1
+        return counts
+    except Exception as exc:  # a check never stops a page from being read
+        print(f'Typeset check skipped: {exc}', flush=True)
+        return None
 
 
 def process_page(doc_id, number, on_stage=None, model=None, save=True, method=None):

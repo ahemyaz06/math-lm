@@ -14,7 +14,8 @@ const PASTED = { '∫': 'int', '∬': 'iint', '∭': 'iiint', '∮': 'oint', '�
 function tokenize(text) {
   const tokens = [];
   const source = text.replace(/[∫∬∭∮∑∏π∞≤≥≠·×−÷²³]/g, (ch) => ` ${PASTED[ch]} `).replace(/ (\^[23]) /g, '$1');
-  const re = /\s*(\d+(?:\.\d+)?|\.\d+|<=|>=|!=|->|~=|\+-|[A-Za-z]+|[-+*/^_=<>(),[\]{}|'!:;]|\S)/gy;
+  // ______ is a blank to fill in (\underline{\qquad}), not subscripts.
+  const re = /\s*(_{3,}|\d+(?:\.\d+)?|\.\d+|<=|>=|!=|->|~=|\+-|[A-Za-z]+|[-+*/^_=<>(),[\]{}|'!:;]|\S)/gy;
   let m;
   while ((m = re.exec(source))) tokens.push(m[1]);
   return tokens;
@@ -107,6 +108,12 @@ class Parser {
   }
   group(open, close) {
     const inner = this.relationList();
+    // A half-open interval, (-1, 1] or [0, 2pi): two ends, one bracket of each kind.
+    const other = { ')': ']', ']': ')' }[close];
+    if (other && inner.type === 'list' && inner.items.length === 2 && this.eat(other)) return { type: 'paren', open, close: other, inner };
+    if (this.peek() !== close && [')', ']', '}'].includes(this.peek())) {
+      throw new Error(`The ${open} is closed with ${this.peek()}. Close it with ${close}; an interval is written (a, b), [a, b], [a, b) or (a, b].`);
+    }
     this.expect(close);
     return { type: 'paren', open, close, inner };
   }
@@ -119,6 +126,7 @@ class Parser {
     const t = this.next();
     if (t === undefined) throw new Error('The equation ends too early.');
     if (/^(\d|\.)/.test(t)) return { type: 'num', value: t };
+    if (/^_{3,}$/.test(t)) return { type: 'sym', latex: '\\underline{\\qquad}' };
     if (t === '(') return this.group('(', ')');
     if (t === '[') return this.group('[', ']');
     if (t === '{') return this.group('{', '}');
@@ -417,7 +425,7 @@ export function latexToPlain(latex) {
       const m = /^\\([A-Za-z]+|.)/.exec(src.slice(i));
       const name = m[1];
       i += m[0].length;
-      if (name === 'frac' || name === 'dfrac' || name === 'tfrac') {
+      if (['frac', 'dfrac', 'tfrac', 'nicefrac'].includes(name)) {
         const [num, a] = readArg(src, i);
         const [den, b] = readArg(src, a);
         out += `${wrap(latexToPlain(num))}/${wrap(latexToPlain(den))}`;
@@ -429,10 +437,27 @@ export function latexToPlain(latex) {
         if (/[A-Za-z0-9]$/.test(out)) out += ' '; // x sqrt(2+x), not xsqrt(2+x)
         out += index ? (index.trim() === '3' ? `cbrt(${latexToPlain(arg)})` : `root(${latexToPlain(index)}, ${latexToPlain(arg)})`) : `sqrt(${latexToPlain(arg)})`;
         i = a;
-      } else if (['text', 'mathrm', 'operatorname', 'mathbf', 'mathit', 'textbf'].includes(name)) {
+      } else if (['text', 'mbox', 'hbox', 'textrm', 'textnormal', 'textit'].includes(name)) {
         const [arg, a] = readArg(src, i);
-        out += name === 'text' ? ` ${arg.trim()} ` : arg;
+        out += ` ${latexToPlain(arg.replace(/\$/g, ''))} `; // \mbox{\textbf{$n^{th}$ Derivative:}}
         i = a;
+      } else if (['mathrm', 'operatorname', 'mathbf', 'mathit', 'textbf'].includes(name)) {
+        const [arg, a] = readArg(src, i);
+        out += latexToPlain(arg); // \mathbf{\infty/\infty} is inf/inf
+        i = a;
+      } else if (['textcolor', 'colorbox', 'color'].includes(name)) {
+        // Colour is how the teacher points at a part (\textcolor{red}{g(x)}): the part stays, its colour goes.
+        i = readArg(src, i)[1];
+      } else if (['hspace', 'vspace', 'phantom', 'hphantom', 'vphantom'].includes(name)) {
+        if (src[i] === '*') i += 1;
+        out += ' ';
+        i = readArg(src, i)[1];
+      } else if (['underline', 'boxed', 'fbox', 'overbrace', 'underbrace'].includes(name)) {
+        // An underline over nothing but space is a blank to fill in (\underline{\qquad}).
+        if (name === 'underline' && src[i] === '{') {
+          const [arg, a] = readArg(src, i);
+          if (!latexToPlain(arg).trim()) { out += ' ______ '; i = a; }
+        }
       } else if (name === 'begin' || name === 'end') {
         const [env, a] = readArg(src, i);
         i = a;

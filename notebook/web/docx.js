@@ -58,8 +58,10 @@ function blockXml(block, ctx) {
     }
     case 'list': {
       ctx.lists += 1;
-      const num = ctx.lists; // every list has its own numbering, so each one starts at 1
-      ctx.numbering.push({ num, ordered: block.ordered });
+      // Every list has its own numbering, so each one starts at 1, or at its next number when
+      // it goes on after a picture (start, at the level of its first item).
+      const num = ctx.lists;
+      ctx.numbering.push({ num, ordered: block.ordered, level: Math.min(block.items[0]?.level || 0, 8), start: block.start || 1 });
       return block.items.map((item) => paragraph('ListParagraph', runsXml(item.runs, ctx.problems),
         `<w:numPr><w:ilvl w:val="${Math.min(item.level || 0, 8)}"/><w:numId w:val="${num}"/></w:numPr>`)).join('');
     }
@@ -104,7 +106,7 @@ function numberingXml(lists) {
 <w:numbering ${NS}>
 <w:abstractNum w:abstractNumId="0"><w:multiLevelType w:val="hybridMultilevel"/>${levels(false)}</w:abstractNum>
 <w:abstractNum w:abstractNumId="1"><w:multiLevelType w:val="hybridMultilevel"/>${levels(true)}</w:abstractNum>
-${lists.map(({ num, ordered }) => `<w:num w:numId="${num}"><w:abstractNumId w:val="${ordered ? 1 : 0}"/>${ordered ? '<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>' : ''}</w:num>`).join('\n')}
+${lists.map(({ num, ordered, level = 0, start = 1 }) => `<w:num w:numId="${num}"><w:abstractNumId w:val="${ordered ? 1 : 0}"/>${ordered ? `<w:lvlOverride w:ilvl="${level}"><w:startOverride w:val="${start}"/></w:lvlOverride>` : ''}</w:num>`).join('\n')}
 </w:numbering>`;
 }
 

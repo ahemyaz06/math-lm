@@ -37,7 +37,9 @@ function environmentEnd(src, i, name) {
 
 function collectMacros(src, notes) {
   const macros = new Map();
-  const re = /\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z]+)\}?|\\def\\([A-Za-z]+)|\\DeclareMathOperator\*?\s*\{\\([A-Za-z]+)\}/g;
+  // A name is letters or one symbol: \newcommand{\?}{\stackrel{?}{=}}. (@ is a letter in
+  // \makeatletter's \renewcommand{\@seccntformat}.)
+  const re = /\\(?:re)?newcommand\*?\s*\{?\\([A-Za-z@]+|[^A-Za-z@\s{}\\])\}?|\\def\\([A-Za-z]+)|\\DeclareMathOperator\*?\s*\{\\([A-Za-z]+)\}/g;
   for (let m = re.exec(src); m; m = re.exec(src)) {
     let i = m.index + m[0].length;
     try {
@@ -56,7 +58,8 @@ function collectMacros(src, notes) {
 function expandMacros(src, macros) {
   if (!macros.size) return src;
   const names = [...macros.keys()].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const re = new RegExp(`\\\\(${names.join('|')})(?![A-Za-z])`, 'g');
+  // A letter name ends where the letters do; a symbol name is that one symbol.
+  const re = new RegExp(`\\\\(${names.join('|')})(?<=\\\\[^A-Za-z]|[A-Za-z](?![A-Za-z]))`, 'g');
   let out = src;
   for (let round = 0; round < 10; round += 1) {
     let changed = false;
@@ -68,7 +71,8 @@ function expandMacros(src, macros) {
       let i = m.index + m[0].length;
       const values = [];
       for (let k = 0; k < args; k += 1) {
-        const g = group(out, i);
+        let g = null;
+        try { g = group(out, i); } catch { /* a { never closed: the next character is the argument */ }
         if (g) { values.push(g[0]); i = g[1]; } else { while (out[i] === ' ') i += 1; values.push(out[i] ?? ''); i += 1; }
       }
       result += out.slice(pos, m.index) + body.replace(/#(\d)/g, (_, n) => values[Number(n) - 1] ?? '');
@@ -89,9 +93,14 @@ const TEXT_SYMBOLS = { ldots: '…', dots: '…', LaTeX: 'LaTeX', TeX: 'TeX', te
 const IGNORED = new Set(['noindent', 'centering', 'raggedright', 'raggedleft', 'medskip', 'bigskip', 'smallskip', 'hfill', 'vfill',
   'maketitle', 'tableofcontents', 'normalsize', 'small', 'footnotesize', 'large', 'Large', 'LARGE', 'huge', 'Huge', 'bfseries',
   'itshape', 'rmfamily', 'sffamily', 'ttfamily', 'indent', 'linebreak', 'nolinebreak', 'protect', 'relax', 'displaystyle', 'item',
-  'normalfont', 'linewidth', 'textwidth', 'scshape', 'upshape', 'mdseries']);
+  'normalfont', 'linewidth', 'textwidth', 'scshape', 'upshape', 'mdseries',
+  // The exam class's page furniture: points in the margin, answer lines, grade tables.
+  'addpoints', 'noaddpoints', 'printanswers', 'noprintanswers', 'pointsinmargin', 'nopointsinmargin', 'bracketedpoints',
+  'boxedpoints', 'pointsdroppedatright', 'unframedsolutions', 'answerline', 'gradetable', 'pointtable', 'bonusgradetable',
+  'partialgradetable', 'combinedgradetable']);
 const DROP_WITH_ARG = new Set(['label', 'vspace', 'hspace', 'vspace*', 'hspace*', 'setlength', 'pagestyle', 'thispagestyle', 'addtolength',
-  'setcounter', 'addcontentsline', 'phantom', 'index', 'hypersetup', 'usepackage', 'documentclass', 'geometry', 'graphicspath']);
+  'setcounter', 'addcontentsline', 'phantom', 'index', 'hypersetup', 'usepackage', 'documentclass', 'geometry', 'graphicspath',
+  'vphantom', 'hphantom', 'fillwithlines', 'fillwithdottedlines', 'makeemptybox', 'enlargethispage']);
 const STYLE = { textbf: 'bold', textit: 'italic', emph: 'italic', textsl: 'italic', underline: 'underline', uline: 'underline' };
 
 function mathOk(latex, notes) {
@@ -129,22 +138,43 @@ function inlineRuns(src, style, ctx) {
       continue;
     }
     if (ch === '\\') {
-      const m = /^\\([A-Za-z]+\*?|.)/.exec(src.slice(i));
+      const m = /^\\([A-Za-z]+\*?|[\s\S])/.exec(src.slice(i));
+      if (!m) break; // a backslash at the very end
       const name = m[1];
       i += m[0].length;
+      // A backslash before a space or a line end ("Quiz 1\ Version A\") is a space.
+      if (/^\s$/.test(name)) { text(' '); continue; }
+      // \verb|\frac{a}{b}|: what is between the two marks, exactly as typed.
+      if (name === 'verb' || name === 'verb*') {
+        const end = src.indexOf(src[i], i + 1);
+        if (src[i] && end > i) { text(src.slice(i + 1, end)); i = end + 1; }
+        continue;
+      }
+      if (name === 'fillin') { const opt = optional(src, i); if (opt) i = opt[1]; text('____'); continue; }
       if (name === '\\' || name === 'newline') { if (src[i] === '*') i += 1; const opt = optional(src, i); if (opt) i = opt[1]; runs.push({ lineBreak: true }); continue; }
       if (STYLE[name]) { const g = group(src, i); if (g) { runs.push(...inlineRuns(g[0], { ...style, [STYLE[name]]: true }, ctx)); i = g[1]; } continue; }
       // A drawn line (\rule{\linewidth}{2pt}) is decoration, not text.
       if (name === 'rule') { const opt = optional(src, i); if (opt) i = opt[1]; for (let k = 0; k < 2; k += 1) { const g = group(src, i); if (g) i = g[1]; } continue; }
-      if (name === 'textsc' || name === 'textrm' || name === 'texttt' || name === 'textsf' || name === 'mbox' || name === 'text' || name === 'textnormal' || name === 'textup') {
+      // \textcolor{red}{word}: the word, without its colour.
+      if (name === 'textcolor' || name === 'colorbox') { const colour = group(src, i); if (colour) i = colour[1]; }
+      if (name === 'color') { const colour = group(src, i); if (colour) i = colour[1]; continue; }
+      if (name === 'textsc' || name === 'textrm' || name === 'texttt' || name === 'textsf' || name === 'mbox' || name === 'text' || name === 'textnormal' || name === 'textup'
+        || name === 'centerline' || name === 'textcolor' || name === 'colorbox') {
         const g = group(src, i); if (g) { runs.push(...inlineRuns(g[0], style, ctx)); i = g[1]; } continue;
       }
       if (name === 'href') { const url = group(src, i); const label = url && group(src, url[1]); if (label) { runs.push(...inlineRuns(label[0], style, ctx)); i = label[1]; } continue; }
       if (name === 'url') { const g = group(src, i); if (g) { text(g[0]); i = g[1]; } continue; }
+      if (name === 'vskip' || name === 'hskip') { i += skipLength(src.slice(i)); text(' '); continue; }
+      if (name === 'footnotemark') { const opt = optional(src, i); if (opt) i = opt[1]; continue; }
+      if (name === 'footnotetext') { const opt = optional(src, i); if (opt) i = opt[1]; const g = group(src, i); if (g) { text(' (footnote: '); runs.push(...inlineRuns(g[0], style, ctx)); text(')'); i = g[1]; } continue; }
       if (name === 'footnote') { const g = group(src, i); if (g) { text(' (footnote: '); runs.push(...inlineRuns(g[0], style, ctx)); text(')'); i = g[1]; } continue; }
       if (name === 'ref' || name === 'eqref' || name === 'cite' || name === 'pageref') { const g = group(src, i); if (g) i = g[1]; text(name === 'cite' ? '[citation]' : '(reference)'); continue; }
       if (DROP_WITH_ARG.has(name)) { const opt = optional(src, i); if (opt) i = opt[1]; const g = group(src, i); if (g) i = g[1]; continue; }
-      if (IGNORED.has(name)) continue;
+      if (IGNORED.has(name)) {
+        // \gradetable[h][questions], \answerline[3]: their options are not text either.
+        if (/table$|^answerline$/.test(name)) for (let opt = optional(src, i); opt; opt = optional(src, i)) i = opt[1];
+        continue;
+      }
       if (TEXT_SYMBOLS[name] !== undefined) { text(TEXT_SYMBOLS[name]); if (/^[A-Za-z]+$/.test(name) && src[i] === ' ') i += 1; continue; }
       if (/^[&%$#_{}~^]$/.test(name)) { text(name === '~' ? '~' : name); continue; }
       if (name === "'" || name === '"' || name === '`' || name === '^' || name === '~') { const g = group(src, i); const letter = g ? g[0] : src[i]; i = g ? g[1] : i + 1; text(letter); continue; }
@@ -187,6 +217,12 @@ const LISTS = { itemize: false, enumerate: true, description: false };
 const THEOREMS = /^(theorem|lemma|corollary|proposition|definition|example|exercise|problem|solution|remark|note|proof|claim|question|answer)\*?$/i;
 const SECTIONS = { part: 1, chapter: 1, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 4 };
 
+// The length after \vskip or \hskip (0.2in, -2 mm, 1em plus 2pt, \baselineskip): how many characters.
+function skipLength(rest) {
+  const m = /^\s*(?:-?(?:\d+\.?\d*|\.\d+)\s*(?:pt|in|cm|mm|em|ex|bp|pc|sp|dd|cc|mu|true\s*\w+)|\\[A-Za-z]+)(?:\s*(?:plus|minus)\s*-?(?:\d+\.?\d*|\.\d+)\s*(?:pt|in|cm|mm|em|ex|fil{1,3}))*/.exec(rest);
+  return m ? m[0].length : 0;
+}
+
 // Split at top-level separators (\\ between rows, & between cells, \item between items).
 function splitTop(src, separator) {
   const parts = [];
@@ -197,7 +233,8 @@ function splitTop(src, separator) {
     if (src[i] === '\\' && !src.startsWith(separator, i)) { i += 1; continue; }
     if (src[i] === '{') depth += 1;
     else if (src[i] === '}') depth -= 1;
-    else if (depth === 0 && envDepth === 0 && src.startsWith(separator, i) && (separator !== '\\item' || !/[A-Za-z]/.test(src[i + 5] || ''))) {
+    // A command as separator (\item, \question) is that command, not a longer one (\items, \questions).
+    else if (depth === 0 && envDepth === 0 && src.startsWith(separator, i) && !(/[A-Za-z]$/.test(separator) && /[A-Za-z]/.test(src[i + separator.length] || ''))) {
       parts.push(src.slice(last, i));
       i += separator.length - 1;
       last = i + 1;
@@ -219,7 +256,16 @@ function readBlocks(src, ctx, listLevel = 0) {
   let para = '';
   const flush = () => {
     if (para.trim()) {
-      const runs = inlineRuns(para, {}, ctx);
+      let runs;
+      try {
+        runs = inlineRuns(para, {}, ctx);
+      } catch (error) {
+        // One bad spot (a { never closed) loses only this paragraph's commands, not the
+        // document: its words are kept as typed, with a note saying so.
+        const words = para.replace(/\\[A-Za-z]+\*?/g, ' ').replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
+        ctx.notes.push(`A paragraph could not be read fully (${error.message}); its words are kept as typed: ${words.slice(0, 60)}`);
+        runs = words ? [{ text: words }] : [];
+      }
       if (runs.length) blocks.push({ type: 'paragraph', runs });
     }
     para = '';
@@ -235,12 +281,17 @@ function readBlocks(src, ctx, listLevel = 0) {
     if (src.startsWith('$$', i) || src.startsWith('\\[', i)) {
       const close = src.startsWith('$$', i) ? '$$' : '\\]';
       const end = src.indexOf(close, i + 2);
-      if (end < 0) throw new Error(`Display maths opened with ${src.slice(i, i + 2)} is never closed.`);
+      if (end < 0) {
+        ctx.notes.push(`Display maths opened with ${src.slice(i, i + 2)} is never closed; what follows is read as text.`);
+        i += 2;
+        continue;
+      }
       flush();
       blocks.push(...displayRows(src.slice(i + 2, end), ctx));
       i = end + 2;
       continue;
     }
+    try {
     const cmd = /^\\([A-Za-z]+)(\*?)/.exec(src.slice(i));
     if (cmd && SECTIONS[cmd[1]]) {
       flush();
@@ -250,6 +301,20 @@ function readBlocks(src, ctx, listLevel = 0) {
       if (g) { blocks.push({ type: 'heading', level: SECTIONS[cmd[1]] + ctx.headingShift, runs: inlineRuns(g[0], {}, ctx) }); i = g[1]; continue; }
     }
     if (cmd && ['newpage', 'clearpage', 'pagebreak', 'cleardoublepage'].includes(cmd[1])) { flush(); blocks.push({ type: 'pageBreak' }); i += cmd[0].length; continue; }
+    // A large centred line is a heading: \textbf{\centerline{\large Higher Order Derivatives}}.
+    const centred = /^(\\textbf\s*\{\s*)?\\centerline\s*\{/.exec(src.slice(i));
+    if (centred) {
+      const g = group(src, i + centred[0].length - 1);
+      if (g && /\\(?:large|Large|LARGE|huge|Huge)(?![A-Za-z])/.test(g[0])) {
+        const close = centred[1] ? /^\s*\}/.exec(src.slice(g[1])) : null;
+        flush();
+        blocks.push({ type: 'heading', level: 1 + ctx.headingShift, runs: inlineRuns(g[0], {}, ctx).map(({ underline, ...r }) => r) });
+        i = g[1] + (close ? close[0].length : 0);
+        continue;
+      }
+    }
+    // Vertical space ends the paragraph, as in TeX: "Step 1: ... \vskip0.1in Step 2: ..." are two.
+    if (cmd && ['vskip', 'vfill', 'bigskip', 'medskip', 'smallskip'].includes(cmd[1])) { flush(); i += cmd[0].length + (cmd[1] === 'vskip' ? skipLength(src.slice(i + cmd[0].length)) : 0); continue; }
     if (cmd && cmd[1] === 'par' && !/[A-Za-z]/.test(src[i + 4] || '')) { flush(); i += 4; continue; }
     if (cmd && cmd[1] === 'includegraphics') {
       flush();
@@ -261,48 +326,56 @@ function readBlocks(src, ctx, listLevel = 0) {
       continue;
     }
     if (cmd && cmd[1] === 'caption') { flush(); const g = group(src, i + cmd[0].length); if (g) { blocks.push({ type: 'paragraph', runs: [{ text: 'Caption: ', italic: true }, ...inlineRuns(g[0], { italic: true }, ctx)] }); i = g[1]; continue; } }
+    // \input{part2}: the other file is not part of this one.
+    if (cmd && ['input', 'include', 'subfile'].includes(cmd[1])) {
+      const g = group(src, i + cmd[0].length);
+      if (g) {
+        flush();
+        blocks.push({ type: 'note', text: `This file includes another file, ${g[0].trim()}, which was not read. Import that file on its own.` });
+        i = g[1];
+        continue;
+      }
+    }
+    // A box around whole paragraphs, environments or display maths (\fbox{\parbox{\textwidth}{\begin{definition}...}},
+    // \fbox{\parbox{\textwidth}{Then, $$...$$}}): its content, read as blocks. A box inside a sentence stays part of it.
+    const box = cmd && BOXES[cmd[1]] !== undefined ? boxContent(src, i + cmd[0].length, BOXES[cmd[1]]) : null;
+    if (box && /\\begin\{|\n[ \t]*\n|\$\$|\\\[|\\par(?![A-Za-z])/.test(box[0])) {
+      flush();
+      blocks.push(...readBlocks(box[0], ctx, listLevel));
+      i = box[1];
+      continue;
+    }
     if (cmd && cmd[1] === 'begin') {
       const g = group(src, i + cmd[0].length);
+      if (!g) { i += cmd[0].length; continue; }
       const name = g[0].trim();
-      const [endAt, after] = environmentEnd(src, g[1], name);
-      let body = src.slice(g[1], endAt);
-      if (DISPLAY_MATH.has(name)) {
+      let endAt, after;
+      try {
+        [endAt, after] = environmentEnd(src, g[1], name);
+      } catch (error) {
+        // Never closed: its content is read on, as if \begin{...} were not there.
+        ctx.notes.push(`${error.message} What follows it is read as ordinary text.`);
         flush();
-        if (/^alignat/.test(name)) body = body.replace(/^\s*\{[^}]*\}/, '');
-        blocks.push(...displayRows(body, ctx));
-      } else if (name in LISTS) {
-        flush();
-        blocks.push(...listBlocks(body, LISTS[name], ctx, listLevel));
-      } else if (name === 'tabular' || name === 'tabularx' || name === 'array' || name === 'longtable') {
-        flush();
-        blocks.push(tableBlock(body, ctx));
-      } else if (name === 'tikzpicture') {
-        flush();
-        blocks.push(...tikzBlocks(body, ctx));
-      } else if (name === 'verbatim' || name === 'lstlisting' || name === 'minted') {
-        flush();
-        blocks.push({ type: 'paragraph', runs: [{ text: body.replace(/^\s*(\[[^\]]*\]|\{[^}]*\})?\n?/, '').replace(/\n$/, '') }] });
-      } else if (name === 'document') {
-        flush();
-        blocks.push(...readBlocks(body, ctx, listLevel));
-      } else if (THEOREMS.test(name)) {
-        flush();
-        // "Theorem (Name)." then its text, as in the printed document.
-        const opt = optional(body, 0);
-        const title = name.replace('*', '').replace(/^./, (c) => c.toUpperCase());
-        const inner = readBlocks(opt ? body.slice(opt[1]) : body, ctx, listLevel);
-        const label = { text: `${title}${opt ? ` (${opt[0]})` : ''}. `, bold: true };
-        if (inner[0]?.type === 'paragraph') inner[0].runs.unshift(label); else inner.unshift({ type: 'paragraph', runs: [label] });
-        blocks.push(...inner);
-      } else {
-        // center, figure, table, minipage, quote, abstract and the rest: their content.
-        flush();
-        const inner = body.replace(/^\s*(\[[^\]]*\])?(\{[^}]*\})?/, (m) => (/^(minipage|tabular|multicols)/.test(name) ? '' : m));
-        if (name === 'abstract') blocks.push({ type: 'heading', level: 2 + ctx.headingShift, runs: [{ text: 'Abstract' }] });
-        blocks.push(...readBlocks(inner, ctx, listLevel));
+        i = g[1];
+        continue;
+      }
+      const body = src.slice(g[1], endAt);
+      flush();
+      try {
+        blocks.push(...environment(name, body, ctx, listLevel));
+      } catch (error) {
+        // One environment that cannot be read loses only itself: its text stays when it has any.
+        ctx.notes.push(`The ${name} here could not be read (${error.message}).`);
+        if (!/^(tikzpicture|tabular|tabularx|array|longtable|axis)$/.test(name)) {
+          try { blocks.push(...readBlocks(body, ctx, listLevel)); } catch { /* the note is enough */ }
+        }
       }
       i = after;
       continue;
+    }
+    } catch (error) {
+      // A command that cannot be read (a { never closed after \section) is kept as text.
+      ctx.notes.push(`Something here could not be read (${error.message}): ${src.slice(i, i + 40).replace(/\s+/g, ' ')}`);
     }
     para += src[i];
     i += 1;
@@ -312,9 +385,93 @@ function readBlocks(src, ctx, listLevel = 0) {
   return blocks;
 }
 
+// The blocks of one \begin{name}...\end{name}.
+function environment(name, body, ctx, listLevel) {
+  if (DISPLAY_MATH.has(name)) {
+    if (/^alignat/.test(name)) body = body.replace(/^\s*\{[^}]*\}/, '');
+    return displayRows(body, ctx);
+  }
+  if (name in LISTS) return listBlocks(body, LISTS[name], ctx, listLevel);
+  if (name === 'tabular' || name === 'tabularx' || name === 'array' || name === 'longtable') return [tableBlock(body, ctx)];
+  if (name === 'tikzpicture') return tikzBlocks(body, ctx);
+  if (name === 'verbatim' || name === 'lstlisting' || name === 'minted') {
+    return [{ type: 'paragraph', runs: [{ text: body.replace(/^\s*(\[[^\]]*\]|\{[^}]*\})?\n?/, '').replace(/\n$/, '') }] }];
+  }
+  if (name === 'document') return readBlocks(body, ctx, listLevel);
+  // The exam class: questions are headings, parts and choices are lists.
+  if (name === 'questions') return questionBlocks(body, ctx, listLevel);
+  if (EXAM_LISTS[name]) return examList(body, EXAM_LISTS[name], ctx, listLevel);
+  // An exam's solutions are printed only with \printanswers: a student's copy has none.
+  if (ctx.exam && /^(solution|solutionorbox|solutionorlines|solutionordottedlines|solutionorgrid)$/.test(name) && !ctx.printAnswers) return [];
+  if (THEOREMS.test(name)) {
+    // "Theorem (Name)." then its text, as in the printed document.
+    const opt = optional(body, 0);
+    const title = name.replace('*', '').replace(/^./, (c) => c.toUpperCase());
+    const inner = readBlocks(opt ? body.slice(opt[1]) : body, ctx, listLevel);
+    const label = { text: `${title}${opt ? ` (${opt[0]})` : ''}. `, bold: true };
+    if (inner[0]?.type === 'paragraph') inner[0].runs.unshift(label); else inner.unshift({ type: 'paragraph', runs: [label] });
+    return inner;
+  }
+  // center, figure, table, minipage, quote, abstract and the rest: their content.
+  const inner = body.replace(/^\s*(\[[^\]]*\])?(\{[^}]*\})?/, (m) => (/^(minipage|tabular|multicols)/.test(name) ? '' : m));
+  const out = name === 'abstract' ? [{ type: 'heading', level: 2 + ctx.headingShift, runs: [{ text: 'Abstract' }] }] : [];
+  return [...out, ...readBlocks(inner, ctx, listLevel)];
+}
+
+// Commands that put a box around their last argument: how many arguments come before it
+// (\parbox{width}{text}, \colorbox{colour}{text}, \fcolorbox{frame}{fill}{text}).
+const BOXES = { fbox: 0, framebox: 0, mbox: 0, makebox: 0, parbox: 1, colorbox: 1, fcolorbox: 2, textcolor: 1 };
+function boxContent(src, i, before) {
+  for (let opt = optional(src, i); opt; opt = optional(src, i)) i = opt[1];
+  for (let k = 0; k < before; k += 1) { const g = group(src, i); if (!g) return null; i = g[1]; }
+  return group(src, i);
+}
+
+// \begin{questions}: \question[points] text, each a numbered heading.
+function questionBlocks(body, ctx, listLevel) {
+  const src = body.replace(/\\(bonusquestion|bonustitledquestion)(?![A-Za-z])/g, (m, n) => (n === 'bonusquestion' ? '\\question' : '\\titledquestion'))
+    .replace(/\\titledquestion\s*\{((?:[^{}]|\{[^{}]*\})*)\}/g, '\\question\x01$1\x02');
+  const out = [];
+  let n = 0;
+  for (const part of splitTop(src, '\\question').slice(1)) {
+    n += 1;
+    let text = part;
+    const title = /^\x01([^\x02]*)\x02/.exec(text);
+    if (title) text = text.slice(title[0].length);
+    const points = /^\s*\[\s*(\d+(?:\.\d+)?)\s*\]/.exec(text);
+    if (points) text = text.slice(points[0].length);
+    const words = `Question ${n}${title ? `: ${title[1].trim()}` : ''}${points ? ` (${points[1]} ${points[1] === '1' ? 'point' : 'points'})` : ''}`;
+    out.push({ type: 'heading', level: Math.min(6, SECTIONS.section + ctx.headingShift), runs: [{ text: words }] }, ...readBlocks(text, ctx, listLevel));
+  }
+  return out;
+}
+
+// parts, subparts and choices: lists labelled as the exam class prints them.
+const EXAM_LISTS = {
+  parts: { item: 'part', label: (k) => `(${String.fromCharCode(97 + k)})` },
+  subparts: { item: 'subpart', label: (k) => `${['i', 'ii', 'iii', 'iv', 'v', 'vi', 'vii', 'viii', 'ix', 'x'][k] || k + 1}.` },
+  subsubparts: { item: 'subsubpart', label: (k) => `${String.fromCharCode(945 + k)}.` },
+  choices: { item: 'choice', label: (k) => `${String.fromCharCode(65 + k)}.` },
+  oneparchoices: { item: 'choice', label: (k) => `${String.fromCharCode(65 + k)}.` },
+  checkboxes: { item: 'choice', label: (k) => `${String.fromCharCode(65 + k)}.` },
+  oneparcheckboxes: { item: 'choice', label: (k) => `${String.fromCharCode(65 + k)}.` },
+};
+function examList(body, { item, label }, ctx, listLevel) {
+  // \CorrectChoice is an ordinary choice on a student's copy (the exam class marks it only with answers).
+  const src = body.replace(/\\CorrectChoice(?![A-Za-z])/g, '\\choice');
+  const parts = splitTop(src, `\\${item}`);
+  // \part[2] text: the points go after the label.
+  const items = parts.slice(1).map((p, k) => {
+    const points = /^\s*\[\s*(\d+(?:\.\d+)?)\s*\]/.exec(p);
+    const rest = points ? p.slice(points[0].length) : p;
+    return `\\item[${label(k)}${points ? ` (${points[1]} ${points[1] === '1' ? 'point' : 'points'})` : ''}]${rest}`;
+  });
+  return [...(parts[0].trim() ? readBlocks(parts[0], ctx, listLevel) : []), ...listBlocks(items.join(''), false, ctx, listLevel)];
+}
+
 function listBlocks(body, ordered, ctx, level) {
-  const out = { type: 'list', ordered, items: [] };
-  const extra = [];
+  // The items, and the pictures, tables and notes between them, in the document's order.
+  const seq = [];
   const parts = splitTop(body, '\\item').slice(1);
   for (const part of parts) {
     let text = part;
@@ -322,20 +479,52 @@ function listBlocks(body, ordered, ctx, level) {
     const opt = optional(text, 0);
     if (opt && /^\s*\[/.test(text)) { label = opt[0]; text = text.slice(opt[1]); }
     const inner = readBlocks(text, ctx, level + 1);
-    const first = inner.find((b) => b.type === 'paragraph');
-    const runs = first ? first.runs : [];
-    if (label) runs.unshift({ text: `${label} `, bold: !ordered });
-    // An item's own display equations join the item's line; its sub-lists keep their level.
-    const rest = inner.filter((b) => b !== first);
-    for (const b of rest.filter((x) => x.type === 'equation')) runs.push({ text: ' ' }, { latex: b.latex });
-    out.items.push({ runs, level });
-    for (const b of rest) {
-      if (b.type === 'list') out.items.push(...b.items);
-      else if (b.type === 'paragraph') out.items.push({ runs: b.runs, level: level + 1 });
-      else if (b.type !== 'equation') extra.push(b);
+    // An item's sentences and display equations stay in their order, each sentence on its own
+    // line and each equation after the words before it ("We know that p(x) = ..."), until a
+    // sub-list; its sub-lists keep their level, and words after a sub-list are a line below it.
+    const runs = label ? [{ text: `${label} `, bold: !ordered }] : [];
+    const item = { runs, level };
+    seq.push(item);
+    let current = item;
+    for (const b of inner) {
+      if (b.type === 'list') {
+        seq.push(...b.items);
+        current = { runs: [], level: level + 1, more: true };
+        seq.push(current);
+      } else if (!current) {
+        seq.push({ block: b }); // words after a picture: below the picture, before the next item
+      } else if (b.type === 'paragraph') {
+        if (current.runs.length && !(current === item && label && current.runs.length === 1)) current.runs.push({ lineBreak: true });
+        current.runs.push(...b.runs);
+      } else if (b.type === 'equation') {
+        if (current.runs.length) current.runs.push({ text: ' ' });
+        current.runs.push({ latex: b.latex });
+      } else {
+        // A graph, table or note stays in its item, after the item's words: the list stops
+        // there and goes on after it at the next number (start).
+        seq.push({ block: b });
+        current = null;
+      }
     }
   }
-  return [out, ...extra];
+  // The lists between those blocks. A list that goes on after a picture starts at its next
+  // number; items that come back to a lower level than the list began at are a new list.
+  const out = [];
+  const count = [];
+  let list = null;
+  for (const e of seq) {
+    if (e.block) { out.push(e.block); list = null; continue; }
+    if (e.more && !e.runs.length) continue;
+    count[e.level] = (count[e.level] || 0) + 1;
+    count.length = e.level + 1;
+    if (!list || e.level < list.items[0].level) {
+      list = { type: 'list', ordered, items: [] };
+      if (count[e.level] > 1) list.start = count[e.level];
+      out.push(list);
+    }
+    list.items.push({ runs: e.runs, level: e.level });
+  }
+  return out.length ? out : [{ type: 'list', ordered, items: [] }];
 }
 
 function tableBlock(body, ctx) {
@@ -356,6 +545,8 @@ export function pgfToPlain(expr) {
   // (\x) is how TikZ files keep a negative x safe; written out it is just x.
   // (Not deg(\x) or sqrt(\x): there the brackets belong to the function.)
   let s = expr.replace(/(^|[^A-Za-z])\(\s*\\x\s*\)/g, '$1x').replace(/\\x\b/g, 'x').replace(/\s+/g, ' ').trim();
+  // In pgfplots maths 1e-9 is always a number in scientific notation.
+  s = s.replace(/(^|[^A-Za-z\d.])(\d*\.?\d+)[eE]([+-]?\d+)(?![\d.])/g, '$1($2*10^($3))');
   let out = '';
   for (let i = 0; i < s.length;) {
     const m = /^(sin|cos|tan|sec|cosec|csc|cot)\s*\(/.exec(s.slice(i));
@@ -381,7 +572,8 @@ function keyValues(opts) {
   return out;
 }
 // A number from an option; a missing option (xmin not given) is null, not 0.
-const num = (v) => { const s = String(v ?? '').replace(/[{}]/g, '').trim(); if (!s) return null; const n = Number(s.replace(/^pi$/, String(Math.PI))); return Number.isFinite(n) ? n : null; };
+// -pi, 2*pi and pi/2 too (domain=-pi:pi).
+const num = (v) => tikzNumber(v);
 
 // A shaded area (how a page shows an integral), in words for the graph's description.
 function shadeWords(shades) {
@@ -390,25 +582,57 @@ function shadeWords(shades) {
   return ` Shaded: ${shades.map((s) => `the area ${s.between ? 'between the two curves' : 'under the curve'}${range(s)}`).join('; ')}.`;
 }
 
+// Options with the file's own styles written out: [holdot] is [color=blue, fill=white, only marks, mark=*].
+function withStyles(opts, ctx) {
+  const styles = ctx.styles || {};
+  let out = opts || '';
+  for (let round = 0; round < 3; round += 1) out = splitTop(out, ',').map((p) => styles[p.trim()] ?? p).join(',');
+  return out;
+}
+// A dot drawn open (white inside) or solid, from its options.
+const isOpen = (opts) => /fill\s*=\s*(white|none)|mark\s*=\s*o\b|mark options\s*=\s*\{[^}]*fill\s*=\s*white|^\s*white\s*(,|$)/.test(opts);
+// Arrowheads (<->, ->, -latex, {Stealth}-{Stealth}): which ends of the curve go on past the window.
+function arrowEnds(opts) {
+  for (const raw of splitTop(opts || '', ',')) {
+    const t = raw.replace(/^\s*arrows\s*=\s*/, '').trim();
+    const m = /^(\{?[A-Za-z<>|[\]]*\}?)-(\{?[A-Za-z<>|[\]]*\}?)$/.exec(t);
+    if (m && !t.includes('=') && (m[1] || m[2])) return { left: Boolean(m[1]), right: Boolean(m[2]) };
+  }
+  return { left: false, right: false };
+}
+// A point in a pgfplots axis: (axis cs:-3,0) or (-3,0), its numbers as TikZ writes them.
+const AXIS_POINT = /\(\s*(?:axis\s+cs\s*:)?\s*([^,()]+?)\s*,\s*([^,()]+?)\s*\)/g;
+const axisPoints = (text) => [...text.matchAll(AXIS_POINT)].map((p) => [tikzNumber(p[1]), tikzNumber(p[2])]).filter((p) => p.every((v) => v !== null));
+
+// A straight line drawn in a graph: a dashed vertical line is how a page shows an asymptote.
+function lineWords({ pts, dashed }) {
+  const kind = dashed ? 'dashed ' : '';
+  if (pts.length === 2 && close(pts[0][0], pts[1][0])) return `${kind}vertical line at x = ${spoken(pts[0][0])}`;
+  if (pts.length === 2 && close(pts[0][1], pts[1][1])) return `${kind}horizontal line at y = ${spoken(pts[0][1])}`;
+  return `${kind}line through ${pts.map((p) => `${spoken(p[0])}, ${spoken(p[1])}`).join('; then ')}`;
+}
+
 function axisGraph(axisOpts, body, ctx) {
   const axis = keyValues(axisOpts);
   const sources = [];
   const points = [];
   const curves = [];
+  const lines = []; // straight lines drawn with \draw or plotted through two points: { pts, dashed }
   const shades = [];
   const named = {}; // name path=f: which plot it is, for fill between
   const domainOf = (text) => { const d = (text || '').split(':').map(num); return d.length === 2 && d.every((v) => v !== null) ? d : null; };
   let domain = axis.domain ? axis.domain.split(':').map(num) : null;
   const re = /\\addplot\+?\s*(\[[^\]]*\])?\s*/g;
   for (let m = re.exec(body); m; m = re.exec(body)) {
-    const opts = keyValues(m[1] ? m[1].slice(1, -1) : '');
+    const raw = withStyles(m[1] ? m[1].slice(1, -1) : '', ctx);
+    const opts = keyValues(raw);
     let rest = body.slice(m.index + m[0].length);
     if (/^coordinates/.test(rest)) {
       const g = group(rest, 'coordinates'.length);
       const pts = [...g[0].matchAll(/\(\s*([^,()]+)\s*,\s*([^()]+?)\s*\)/g)].map((p) => [num(p[1]), num(p[2])]).filter((p) => p.every((v) => v !== null));
-      const onlyMarks = 'only marks' in opts || /only marks/.test(m[1] || '');
-      const open = /mark\s*=\s*o\b|fill\s*=\s*white/.test(m[1] || '');
-      if (onlyMarks) for (const p of pts) points.push({ kind: open ? 'open dot' : 'solid dot', coordinate: p });
+      // Marks only, or a single point (it cannot be a line): dots, open when white inside.
+      if (/only marks/.test(raw) || pts.length === 1) for (const p of pts) points.push({ kind: isOpen(raw) ? 'open dot' : 'solid dot', coordinate: p });
+      else if (pts.length === 2 && (/dash/.test(raw) || close(pts[0][0], pts[1][0]))) lines.push({ pts, dashed: /dash/.test(raw) });
       else if (pts.length >= 2) curves.push({ kind: 'line', color: opts.color || '', label: `line through ${pts.length} points`, corners: pts.sort((a, b) => a[0] - b[0]) });
       re.lastIndex = m.index + m[0].length + g[1];
       continue;
@@ -443,11 +667,34 @@ function axisGraph(axisOpts, body, ctx) {
       if (opts['name path']) named[opts['name path']] = { zero: /^\s*0\s*$/.test(g[0]), index: sources.length };
       // pgfplots draws a plot over its domain, or the axis's, or -5 to 5.
       const own = plotDomain && plotDomain.every((v) => v !== null) ? plotDomain : [-5, 5];
-      sources.push({ text: latex, format: 'latex', domain: [Math.min(...own), Math.max(...own)] });
+      sources.push({ text: latex, format: 'latex', domain: [Math.min(...own), Math.max(...own)], arrows: arrowEnds(raw) });
     } catch (error) {
       ctx.notes.push(`A plotted function could not be read: ${g[0]} (${error.message})`);
     }
   }
+  // Dots, dashed lines and other straight lines drawn with TikZ inside the axis.
+  let unread = 0;
+  for (const d of drawCommands(body)) {
+    const raw = withStyles(d.opts, ctx);
+    const pts = axisPoints(d.rest);
+    if (!pts.length) { if (d.command !== 'node' && d.command !== 'path') unread += 1; continue; }
+    if (/\bcircle\b/.test(d.rest) && d.command !== 'node') {
+      // \fill[white, draw=blue] (axis cs:-3,0) circle[radius=3pt] is open; \fill[blue] is solid; \draw alone is open.
+      const open = d.command === 'fill' ? /^\s*white\s*(,|$)|fill\s*=\s*white/.test(raw) : isOpen(raw) || (d.command === 'draw' && !/fill/.test(raw));
+      points.push({ kind: open ? 'open dot' : 'solid dot', coordinate: pts[0] });
+      continue;
+    }
+    if (d.command === 'node' || /\bnode\b/.test(d.rest)) {
+      const content = /\{([^{}]*(?:\{[^{}]*\}[^{}]*)*)\}\s*$/.exec(d.rest)?.[1] || '';
+      const kind = /\\circ\b|\\ocircle/.test(content) ? 'open dot' : /bullet/.test(content) ? 'solid dot'
+        : /circle/.test(raw) && !content.trim() ? (isOpen(raw) || !/fill/.test(raw) ? 'open dot' : 'solid dot') : null;
+      if (kind) points.push({ kind, coordinate: pts[0] });
+      continue; // otherwise a label
+    }
+    if (pts.length >= 2 && /--/.test(d.rest)) { lines.push({ pts, dashed: /dash|dotted/.test(raw) }); continue; }
+    unread += 1;
+  }
+  if (unread) ctx.notes.push(`${unread} ${unread === 1 ? 'thing' : 'things'} drawn inside a pgfplots graph could not be read; check the graph against the page.`);
   const x = [num(axis.xmin), num(axis.xmax)];
   const y = [num(axis.ymin), num(axis.ymax)];
   // Without xmin and xmax the axis is as wide as what is plotted.
@@ -456,19 +703,32 @@ function axisGraph(axisOpts, body, ctx) {
   const yr = y.every((v) => v !== null) && y[0] < y[1] ? y : null;
   // A plot of 0 named only for fill between is the x-axis, not a function to describe.
   const drop = new Set(Object.values(named).filter((n) => n.drop).map((n) => n.index));
-  // A plot drawn on only part of the axis is that function on that part.
-  const kept = sources.filter((_, i) => !drop.has(i)).map((src) => (xr && (src.domain[0] > xr[0] + 1e-9 || src.domain[1] < xr[1] - 1e-9)
-    ? { ...src, text: `f(x) = \\begin{cases} ${src.text} & ${src.domain[0]} \\le x \\le ${src.domain[1]} \\end{cases}` } : src));
-  if (!kept.length && !curves.length && !points.length) return null;
+  // A plot drawn on only part of the axis is that function on that part. An arrowhead means
+  // the curve goes on past that end; an open dot drawn at an end leaves that point out.
+  const kept = sources.filter((_, i) => !drop.has(i)).map((src) => {
+    const end = (v, side) => {
+      if (src.arrows[side] || !xr || (side === 'left' ? v <= xr[0] + 1e-9 : v >= xr[1] - 1e-9)) return null;
+      let yv = NaN;
+      try { yv = compileFunction(src.text, 'latex').graph.yAt(v); } catch { /* the plain end */ }
+      const dot = points.find((p) => close(p.coordinate[0], v) && Math.abs(p.coordinate[1] - yv) < 0.05 * (1 + Math.abs(yv)));
+      return dot?.kind === 'open dot' ? '<' : '\\le';
+    };
+    const lo = end(src.domain[0], 'left'), hi = end(src.domain[1], 'right');
+    if (!lo && !hi) return src;
+    const condition = `${lo ? `${fmt(src.domain[0])} ${lo} ` : ''}x${hi ? ` ${hi} ${fmt(src.domain[1])}` : ''}`;
+    return { ...src, text: `f(x) = \\begin{cases} ${src.text} & ${condition} \\end{cases}` };
+  });
+  if (!kept.length && !curves.length && !points.length && !lines.length) return null;
   const graph = kept.length ? makeGraph(kept, { x: xr, y: yr }) : {
-    summary: `${curves.map((c) => c.label).join('; ')}${points.length ? `; ${points.length} marked ${points.length === 1 ? 'point' : 'points'}` : ''}.`,
+    summary: `${[...curves.map((c) => c.label), ...lines.map(lineWords)].join('; ')}${points.length ? `${curves.length || lines.length ? '; ' : ''}${points.length} marked ${points.length === 1 ? 'point' : 'points'}` : ''}.`.replace(/^./, (c) => c.toUpperCase()),
     span: { x: xr || [-5, 5], y: yr || [-5, 5] }, functions: [], points: [],
   };
   // A plot simply stops at the end of its domain: pgfplots draws no dot there.
   for (const pt of graph.points || []) graph.summary = graph.summary.replace(`; ${pt.label}`, '').replace(`: ${pt.label}; `, ': ').replace(`: ${pt.label}.`, '.');
   graph.curves = [...(graph.curves || []), ...curves];
   graph.points = points;
-  if (points.length && kept.length) graph.summary += ` Marked: ${points.map((p) => `${p.kind} at ${p.coordinate.join(', ')}`).join('; ')}.`;
+  if (points.length && kept.length) graph.summary += ` Marked: ${points.map((p) => `${p.kind} at ${p.coordinate.map(spoken).join(', ')}`).join('; ')}.`;
+  if (lines.length && kept.length) graph.summary += ` Also drawn: ${lines.map(lineWords).join('; ')}.`;
   graph.summary += shadeWords(shades);
   return graph;
 }
@@ -634,52 +894,77 @@ function tikzPlotGraph(body, ctx) {
 // page shows only the drawing, so the graph holds the curve, its points and dots (as a student
 // copy whose formula is hidden).
 function formulaGraph(plots, dots, x, y) {
-  let pieces = plots.map((p) => {
+  const all = plots.map((p) => {
     const plain = pgfToPlain(p.expr);
     const fn = compileFunction(plain, 'plain').graph;
     return { ...p, plain, latex: latexOfPlain(plain), fn, lo: p.left ? -Infinity : snap(p.lo), hi: p.right ? Infinity : snap(p.hi) };
   }).sort((a, b) => a.lo - b.lo);
-  // One formula drawn in parts (left and right of an asymptote, 1/(x-1) on -3:0.9 and 1.1:3)
-  // is one function: its own maths says what happens in the gap.
-  if (pieces.length > 1 && pieces.every((p) => p.plain === pieces[0].plain)) {
-    pieces = [{ ...pieces[0], lo: pieces[0].lo, hi: Math.max(...pieces.map((p) => p.hi)), right: pieces.some((p) => p.right) }];
+  // Plots side by side are the pieces of one function; plots of different formulas over the
+  // same x (f and g on the same axes) are different functions, told apart by their labels
+  // (node{$f(x)$}) when the page has them.
+  const overlap = (a, b) => Math.min(a.hi, b.hi) - Math.max(a.lo, b.lo) > 1e-6;
+  const groups = [];
+  for (const p of all) {
+    let g = p.label ? groups.find((q) => q.label === p.label) : null;
+    g ||= groups.find((q) => (!p.label || !q.label) && q.pieces.every((r) => r.plain === p.plain || !overlap(r, p)));
+    if (!g) { g = { label: null, pieces: [] }; groups.push(g); }
+    g.pieces.push(p);
+    g.label ||= p.label;
   }
-  // Each end belongs to its piece when a solid dot sits there (or nothing marks it open and
-  // no earlier piece already has that x); an open dot leaves it out.
-  const ownsEnd = (p, b, earlier) => {
-    const v = p.fn.limitAt(b);
-    const at = (kind) => dots.some((d) => d.kind === kind && close(d.coordinate[0], b) && (v.defined || v.hole) && Math.abs(d.coordinate[1] - v.y) < 0.05 * (1 + Math.abs(v.y)));
-    if (at('open dot')) return false;
-    if (at('solid dot')) return true;
-    return !earlier;
-  };
-  const rows = pieces.map((p, n) => {
-    const before = pieces.slice(0, n).some((q) => close(q.hi, p.lo) && ownsEnd(q, p.lo, false));
-    const lo = Number.isFinite(p.lo) ? `${fmt(p.lo)} ${ownsEnd(p, p.lo, before) ? '\\le' : '<'} ` : '';
-    const hi = Number.isFinite(p.hi) ? ` ${ownsEnd(p, p.hi, false) ? '\\le' : '<'} ${fmt(p.hi)}` : '';
-    return lo || hi ? `${p.latex} & ${lo}x${hi}` : null;
+  const several = groups.length > 1;
+  const built = groups.map((g, k) => {
+    let pieces = g.pieces;
+    // One formula drawn in parts (left and right of an asymptote, 1/(x-1) on -3:0.9 and 1.1:3)
+    // is one function: its own maths says what happens in the gap.
+    if (pieces.length > 1 && pieces.every((p) => p.plain === pieces[0].plain)) {
+      pieces = [{ ...pieces[0], lo: pieces[0].lo, hi: Math.max(...pieces.map((p) => p.hi)), right: pieces.some((p) => p.right) }];
+    }
+    // Each end belongs to its piece when a solid dot sits there (or nothing marks it open and
+    // no earlier piece already has that x); an open dot leaves it out.
+    const ownsEnd = (p, b, earlier) => {
+      const v = p.fn.limitAt(b);
+      const at = (kind) => dots.some((d) => d.kind === kind && close(d.coordinate[0], b) && (v.defined || v.hole) && Math.abs(d.coordinate[1] - v.y) < 0.05 * (1 + Math.abs(v.y)));
+      if (at('open dot')) return false;
+      if (at('solid dot')) return true;
+      return !earlier;
+    };
+    const rows = pieces.map((p, n) => {
+      const before = pieces.slice(0, n).some((q) => close(q.hi, p.lo) && ownsEnd(q, p.lo, false));
+      const lo = Number.isFinite(p.lo) ? `${fmt(p.lo)} ${ownsEnd(p, p.lo, before) ? '\\le' : '<'} ` : '';
+      const hi = Number.isFinite(p.hi) ? ` ${ownsEnd(p, p.hi, false) ? '\\le' : '<'} ${fmt(p.hi)}` : '';
+      return lo || hi ? `${p.latex} & ${lo}x${hi}` : null;
+    });
+    // The page's own name for the curve: f(x), g(x), or a label such as $h$.
+    const letter = /^\s*([A-Za-z])\s*(\(\s*x\s*\))?\s*$/.exec(g.label || '');
+    const name = several ? (letter ? `${letter[1]}(x)` : 'y') : all.map((p) => p.label).find((l) => l && /f\s*\(\s*x\s*\)/.test(l)) ? 'f(x)' : 'y';
+    const latex = rows.every((r) => r === null) && pieces.length === 1 ? `${name} = ${pieces[0].latex}`
+      : `${name} = \\begin{cases} ${pieces.map((p, n) => rows[n] ?? `${p.latex} & \\text{otherwise}`).join(' \\\\ ')} \\end{cases}`;
+    return { pieces, latex, spokenName: letter ? `${letter[1]}(x)` : g.label ? latexToPlain(g.label) : `Function ${k + 1}` };
   });
-  const name = plots.map((p) => p.label).find((l) => l && /f\s*\(\s*x\s*\)/.test(l)) ? 'f(x)' : 'y';
-  const latex = rows.every((r) => r === null) && pieces.length === 1 ? `${name} = ${pieces[0].latex}`
-    : `${name} = \\begin{cases} ${pieces.map((p, n) => rows[n] ?? `${p.latex} & \\text{otherwise}`).join(' \\\\ ')} \\end{cases}`;
-  const full = makeGraph([{ text: latex, format: 'latex' }], { x, y });
+  const full = makeGraph(built.map((b) => ({ text: b.latex, format: 'latex' })), { x, y });
   // Where the drawing simply stops (a domain end with nothing drawn there) there is no dot:
   // the curve's start or end is said instead. Dots stay where they are drawn, and where two
-  // pieces meet (a jump).
-  const shared = (b) => pieces.some((p) => close(p.hi, b)) && pieces.some((p) => close(p.lo, b));
+  // pieces of the same function meet (a jump).
+  const shared = (pieces, b) => pieces.some((p) => close(p.hi, b)) && pieces.some((p) => close(p.lo, b));
   const drawn = (pt) => dots.some((d) => d.kind === pt.kind && close(d.coordinate[0], pt.coordinate[0]) && Math.abs(d.coordinate[1] - pt.coordinate[1]) < 0.05);
-  const dropped = full.points.filter((pt) => !(drawn(pt) || shared(pt.coordinate[0])));
+  const dropped = full.points.filter((pt) => !(drawn(pt) || shared(built[pt.function ?? 0].pieces, pt.coordinate[0])));
   full.points = full.points.filter((pt) => !dropped.includes(pt));
-  // Dots drawn in the picture that the pieces' own ends did not already make.
+  // Dots drawn in the picture that the pieces' own ends did not already make, each with the
+  // function it sits on.
   const extra = dots.filter((d) => !full.points.some((p) => p.kind === d.kind && close(p.coordinate[0], d.coordinate[0]) && Math.abs(p.coordinate[1] - d.coordinate[1]) < 0.05));
-  full.points.push(...extra.map((d) => ({ ...d, function: 0, label: `${d.kind} at ${d.coordinate.join(', ')}` })));
-  const graph = studentGraph({ ...full, student: { hideFormula: true, hide: [], note: 'Drawn on the page; its formula is not shown, as on paper.' } });
+  const owner = (d) => Math.max(0, built.findIndex((b) => b.pieces.some((p) => { const v = p.fn.limitAt(d.coordinate[0]); return (v.defined || v.hole) && Math.abs(v.y - d.coordinate[1]) < 0.05 * (1 + Math.abs(v.y)); })));
+  full.points.push(...extra.map((d) => ({ ...d, function: owner(d), label: `${d.kind} at ${d.coordinate.join(', ')}` })));
+  const graph = studentGraph({ ...full, student: { hideFormula: true, hide: [], drawn: true, names: several ? built.map((b) => b.spokenName) : undefined,
+    note: several ? 'Drawn on the page; their formulas are not shown, as on paper.' : 'Drawn on the page; its formula is not shown, as on paper.' } });
   for (const pt of dropped) graph.summary = graph.summary.replace(`; ${pt.label}`, '').replace(`: ${pt.label}; `, ': ');
   if (extra.length) graph.summary += ` Also drawn: ${extra.map((d) => `${d.kind} at ${d.coordinate.join(', ')}`).join('; ')}.`;
   return graph;
 }
 
 function tikzBlocks(body, ctx) {
+  // A box placed on the page itself ([remember picture, overlay]: the name and section box at
+  // the top of a quiz) is page furniture, not a figure.
+  if (/^\s*\[[^\]]*\b(remember picture|overlay)\b/.test(body)) return [];
   const axes = [...body.matchAll(/\\begin\{(axis|semilogyaxis|semilogxaxis|loglogaxis)\}/g)];
   if (!axes.length) {
     const graph = tikzPlotGraph(body, ctx);
@@ -691,8 +976,16 @@ function tikzBlocks(body, ctx) {
     const start = a.index + a[0].length;
     const opt = optional(body, start);
     const [end] = environmentEnd(body, opt ? opt[1] : start, a[1]);
-    const graph = axisGraph(opt ? opt[0] : '', body.slice(opt ? opt[1] : start, end), ctx);
-    out.push(graph ? { type: 'graph', graph } : { type: 'note', text: 'A pgfplots graph with nothing that could be read.' });
+    const inside = body.slice(opt ? opt[1] : start, end);
+    const graph = axisGraph(opt ? opt[0] : '', inside, ctx);
+    if (graph) { out.push({ type: 'graph', graph }); continue; }
+    // An axis with nothing drawn on it is a grid to sketch on.
+    const o = keyValues(opt ? opt[0] : '');
+    const range = (a, b) => (num(o[a]) !== null && num(o[b]) !== null ? `${spoken(num(o[a]))} to ${spoken(num(o[b]))}` : null);
+    if (!/\\(addplot|draw|fill|node|filldraw)\b/.test(inside)) {
+      const xs = range('xmin', 'xmax'), ys = range('ymin', 'ymax');
+      out.push({ type: 'paragraph', runs: [{ text: `An empty grid to draw on${xs ? `, x from ${xs}` : ''}${ys ? `, y from ${ys}` : ''}.` }] });
+    } else out.push({ type: 'note', text: 'A pgfplots graph with nothing that could be read.' });
   }
   return out;
 }
@@ -762,29 +1055,102 @@ function toPgf(text) {
 
 // ---------- the whole file ----------
 
+// The source without its % comments. A % inside \url{...}, \href{...}, \verb|...| or a verbatim
+// environment is part of the text (http://a.b/50%off), so it stays.
+function withoutComments(src) {
+  let verbatim = null;
+  return src.split('\n').map((line) => {
+    if (verbatim) {
+      if (line.includes(`\\end{${verbatim}}`)) verbatim = null;
+      return line;
+    }
+    let depth = 0; // inside \url{ or \href{
+    for (let i = 0; i < line.length; i += 1) {
+      const ch = line[i];
+      if (ch === '\\') {
+        const m = /^\\(url|href|verb\*?|begin\{(verbatim|lstlisting|minted)\})/.exec(line.slice(i));
+        if (m?.[1].startsWith('verb')) { const end = line.indexOf(line[i + m[0].length], i + m[0].length + 1); i = end < 0 ? line.length : end; continue; }
+        if (m?.[2]) { if (!line.includes(`\\end{${m[2]}}`, i)) verbatim = m[2]; return line; }
+        if (m && line[i + m[0].length] === '{') { depth += 1; i += m[0].length; continue; }
+        i += 1; // \% and other escapes
+        continue;
+      }
+      if (depth && ch === '{') depth += 1;
+      else if (depth && ch === '}') depth -= 1;
+      else if (ch === '%' && !depth) return line.slice(0, i);
+    }
+    return line;
+  }).join('\n');
+}
+
+// TikZ and pgfplots styles a file defines (\tikzset{holdot/.style={fill=white, ...}}): name -> options.
+function tikzStyles(src) {
+  const styles = {};
+  const re = /([A-Za-z][\w ]*?)\s*\/\.style\s*=\s*\{/g;
+  for (let m = re.exec(src); m; m = re.exec(src)) {
+    try {
+      const g = group(src, m.index + m[0].length - 1);
+      if (g) { styles[m[1].trim()] = g[0]; re.lastIndex = g[1]; }
+    } catch { /* an unfinished style is left out */ }
+  }
+  return styles;
+}
+
 export function texToBlocks(source) {
   const notes = [];
   const ctx = { notes, unknown: new Set(), headingShift: 0 };
-  const noComments = source.replace(/\r\n?/g, '\n').replace(/(^|[^\\])%.*$/gm, '$1');
+  const noComments = withoutComments(source.replace(/\r\n?/g, '\n'));
   const macros = collectMacros(noComments, notes);
   const begin = noComments.indexOf('\\begin{document}');
   const end = noComments.lastIndexOf('\\end{document}');
   const preamble = begin >= 0 ? noComments.slice(0, begin) : '';
   let body = begin >= 0 ? noComments.slice(begin + '\\begin{document}'.length, end >= 0 ? end : undefined) : noComments;
+  ctx.exam = /\\documentclass\s*(\[[^\]]*\])?\s*\{exam\}/.test(preamble);
+  ctx.printAnswers = /\\printanswers\b|\\documentclass\s*\[[^\]]*\banswers\b/.test(noComments);
+  ctx.styles = tikzStyles(preamble + body);
+  // cases* (mathtools) is cases with its second column in words: \text{if }x>0.
+  body = body.replace(/\\begin\{cases\*\}([\s\S]*?)\\end\{cases\*\}/g, (_, rows) => `\\begin{cases}${rows.split('\\\\').map((row) => {
+    const [expr, ...rest] = row.split(/(?<!\\)&/);
+    if (!rest.length) return row;
+    const words = rest.join('&').split('$').map((piece, k) => (k % 2 ? piece : piece.trim() ? `\\text{${piece.replace(/^\s+/, '').replace(/\s+$/, ' ')}}` : '')).join('');
+    return `${expr}& ${words}`;
+  }).join('\\\\')}\\end{cases}`);
   // The definitions themselves are not text.
-  body = body.replace(/\\(?:re)?newcommand\*?\s*\{?\\[A-Za-z]+\}?(\[\d\])?(\[[^\]]*\])?/g, '\\DROPDEF').replace(/\\DeclareMathOperator\*?\s*\{\\[A-Za-z]+\}/g, '\\DROPDEF');
+  body = body.replace(/\\(?:re)?newcommand\*?\s*\{?\\(?:[A-Za-z@]+|[^A-Za-z@\s{}\\])\}?(\[\d\])?(\[[^\]]*\])?/g, '\\DROPDEF').replace(/\\DeclareMathOperator\*?\s*\{\\[A-Za-z]+\}/g, '\\DROPDEF');
   body = body.replace(/\\DROPDEF\s*\{(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*\}/g, '');
   body = expandMacros(body, macros);
-  const titleOf = (name) => { const m = new RegExp(`\\\\${name}\\s*(\\[[^\\]]*\\])?\\s*\\{`).exec(preamble + body); return m ? group(preamble + body, m.index + m[0].length - 1)?.[0] : null; };
-  const title = titleOf('title');
+  const titleOf = (name) => {
+    const m = new RegExp(`\\\\${name}\\s*(\\[[^\\]]*\\])?\\s*\\{`).exec(preamble + body);
+    try { return m ? group(preamble + body, m.index + m[0].length - 1)?.[0] : null; } catch { notes.push(`The \\${name} could not be read.`); return null; }
+  };
+  let title = titleOf('title');
   const author = titleOf('author');
+  // Without \title, a large centred line at the very top is the title:
+  // \textbf{\centerline{\Large Section 3.9 - Related Rates}}.
+  if (!title) {
+    const top = /^\s*(?:\\noindent\s*)?(\\textbf\s*\{\s*)?\\centerline\s*\{/.exec(body);
+    const g = top && group(body, top[0].length - 1);
+    if (g && /\\(?:Large|LARGE|huge|Huge)(?![A-Za-z])/.test(g[0])) {
+      const close = top[1] ? /^\s*\}/.exec(body.slice(g[1])) : null;
+      title = g[0];
+      body = body.slice(g[1] + (close ? close[0].length : 0));
+    }
+  }
   // \title and \author are shown where \maketitle is (or at the top).
   body = body.replace(/\\(title|author|date)\s*\{(?:[^{}]|\{[^{}]*\})*\}/g, '');
   ctx.headingShift = title ? 1 : 0; // the title is the only level-1 heading
   const blocks = [];
   if (title) blocks.push({ type: 'heading', level: 1, runs: inlineRuns(expandMacros(title, macros), {}, ctx) });
   if (author) blocks.push({ type: 'paragraph', runs: inlineRuns(expandMacros(author.replace(/\\and/g, ', '), macros), {}, ctx) });
-  blocks.push(...readBlocks(body, ctx));
+  try {
+    blocks.push(...readBlocks(body, ctx));
+  } catch (error) {
+    // Nothing above should let an error through; if one does, each paragraph is read on its own.
+    notes.push(`Part of this file could not be read (${error.message}).`);
+    for (const chunk of body.split(/\n[ \t]*\n/)) {
+      try { blocks.push(...readBlocks(chunk, ctx)); } catch { blocks.push({ type: 'paragraph', runs: [{ text: chunk.replace(/\s+/g, ' ').trim() }] }); }
+    }
+  }
   for (const b of blocks) if (b.type === 'heading') b.level = Math.min(b.level, 6);
   if (ctx.unknown.size) notes.push(`These commands are not known to the notebook, so only their text was kept: ${[...ctx.unknown].map((n) => `\\${n}`).join(', ')}.`);
   return { title: title ? inlineRuns(expandMacros(title, macros), {}, ctx).map((r) => r.text ?? (r.lineBreak ? ' ' : '')).join('').replace(/\s+/g, ' ').trim() : null, blocks, notes };

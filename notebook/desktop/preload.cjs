@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('notebook', {
   save: (options) => ipcRenderer.invoke('save', options),
   saveBinary: (options) => ipcRenderer.invoke('save-binary', options),
   exportPdf: (options) => ipcRenderer.invoke('export-pdf', options),
+  exportBraille: (options) => ipcRenderer.invoke('export-braille', options),
   print: () => ipcRenderer.invoke('print'),
   copyText: (text) => ipcRenderer.invoke('copy-text', text),
   readText: () => ipcRenderer.invoke('read-text'),

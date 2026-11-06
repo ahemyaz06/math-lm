@@ -2,6 +2,7 @@
   "name": "math-notebook",
   "version": "0.7.5",
   "private": true,
+  "type": "module",
   "description": "An accessible maths notebook for blind students: NVDA and MathCAT, graphs explored by sound",
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {

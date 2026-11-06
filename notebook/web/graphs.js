@@ -6,7 +6,8 @@ import { compileEquation, compileExpression, detectLandmarks, formatNumber } fro
 
 // How numbers are said while exploring a graph (Settings > Graph sound): 'half' rounds to the
 // nearest half (4.1931 is 4, 0.894 is 1, 0.00004 is 0), 'tenth' to one decimal, 'exact' keeps
-// six digits. What is written into the document (makeGraph, studentGraph) is always exact.
+// six digits. What is written into the document (makeGraph, studentGraph) has at most two
+// decimals (1.41421 is 1.41; the owner asked, 2026-11-05), whatever the setting.
 let numberStyle = 'exact';
 export function setNumberStyle(style) {
   if (['half', 'tenth', 'exact'].includes(style)) numberStyle = style;
@@ -16,14 +17,17 @@ export function roundForSpeech(n) {
   // Halves round away from zero on both sides: 3.75 is 4 and -3.75 is -4 (Math.round alone
   // would make -3.75 into -3.5).
   const to = (k) => Math.sign(n) * Math.round(Math.abs(n) * k) / k;
-  const r = numberStyle === 'half' ? to(2) : numberStyle === 'tenth' ? to(10) : n;
+  // Written: two decimals, but a small number that is not 0 keeps two digits (0.004 is not 0).
+  const written = () => (Math.abs(n) < .005 && Math.abs(n) > 1e-7 ? Number(n.toPrecision(2)) : to(100));
+  const r = numberStyle === 'half' ? to(2) : numberStyle === 'tenth' ? to(10) : numberStyle === 'written' ? written() : n;
   // A point found a hair inside an open end (1e-9 for "0 < x") is said as that end.
   return Math.abs(r) < 1e-7 ? 0 : r;
 }
 export const say = (n) => formatNumber(roundForSpeech(n)).replace('-', 'minus ');
-function exactly(work) {
+// Two decimals while work runs: what is written, and the points a description names.
+export function exactly(work) {
   const before = numberStyle;
-  numberStyle = 'exact';
+  numberStyle = 'written';
   try { return work(); } finally { numberStyle = before; }
 }
 
@@ -75,7 +79,7 @@ function graphText(n) {
     case 'prime': throw new Error("A derivative (f') cannot be graphed from its name; write the function itself.");
     case 'lim': throw new Error('A limit is a number, not a function to graph.');
     case 'large': throw new Error(`${n.latex === '\\sum' || n.latex === '\\prod' ? 'A sum or product' : 'An integral'} cannot be graphed; graph the function inside it instead.`);
-    case 'list': throw new Error('Write one function per line.');
+    case 'list': throw new Error('Write one function per line. For an interval, write on (1, 2) or for 1 < x < 2.');
     case 'rel': throw new Error('Only one = sign, as in y = x^2.');
     default: throw new Error('This cannot be graphed.');
   }
@@ -89,6 +93,8 @@ function functionSide(ast) {
     || (n.type === 'mul' && n.left.type === 'var' && n.right.type === 'paren' && n.right.inner.type === 'var' && n.right.inner.name === 'x');
   if (isName(ast.left) && ast.right.type !== 'rel') return { name: ast.left.type === 'var' ? 'y' : `${ast.left.left.name}(x)`, body: ast.right };
   if (isName(ast.right) && ast.left.type !== 'rel') return { name: ast.right.type === 'var' ? 'y' : `${ast.right.left.name}(x)`, body: ast.left };
+  const isX = (n) => n.type === 'var' && n.name === 'x';
+  if (isX(ast.left) !== isX(ast.right) && !/"name":"[xy]"/.test(JSON.stringify(isX(ast.left) ? ast.right : ast.left))) throw new Error('A vertical line (x = 2) cannot be graphed yet; graphs are of functions, y = ...');
   throw new Error('Write the function as y = ... or f(x) = ... so it is clear what to graph.');
 }
 
@@ -164,6 +170,13 @@ const isInequality = (n) => n.type === 'rel' && n.op !== '=' && (n.left.type !==
 // One function of x from plain text or LaTeX. Returns Sound Lab's graph object plus the
 // dots that a piecewise function's ends make, and a label to speak.
 export function compileFunction(source, format = /\\[A-Za-z]|[_^]\{/.test(source) ? 'latex' : 'plain') {
+  // 1e-9 could be 1 times 10 to the -9 or 1 times e, minus 9: a wrong guess describes the wrong
+  // function with confidence, so the writer says which.
+  const sci = /(^|[^A-Za-z\d.])(\d*\.?\d+)[eE]([+-]?\d+)(?![\d.])/.exec(String(source));
+  if (sci) throw new Error(`${sci[2]}e${sci[3]} could mean ${sci[2]} times 10 to the ${sci[3]}, or ${sci[2]} times e${/^[+-]/.test(sci[3]) ? `, ${sci[3][0] === '-' ? 'minus' : 'plus'} ${sci[3].slice(1)}` : ` times ${sci[3]}`}. Write ${sci[2]}*10^(${sci[3]}) for the number, or put a space or * around e.`);
+  // Functions the graphs cannot draw yet, said by name (not "the letter f has no value").
+  const unsupported = /\b(floor|ceil|ceiling|round|sgn|sign|max|min|mod|gcd|lcm)\s*\(/.exec(String(source));
+  if (unsupported) throw new Error(`${unsupported[1]} is not supported in graphs yet.`);
   // A sentence's full stop or comma after the maths (g(x) = x^{3}.) is not part of it.
   const latex = (format === 'latex' ? source.trim() : plainToLatex(source)).replace(/\s*[.,;]\s*$/, '');
   const cases = caseRows(latex);
@@ -225,8 +238,10 @@ function piecewise({ name, rows }, latex) {
       const p = pieceAt(a);
       return p !== null && pieceAt(b) === p && pieceAt((a + b) / 2) === p && p.fn.isContinuousBetween(a, b);
     },
-    // Each row's own divisions by zero, only where that row is the one in use.
-    domainChecks: pieces.flatMap((p) => p.fn.domainChecks.map((c) => ({ kind: c.kind, evaluate: (scope) => (pieceAt(scope.x) === p ? c.evaluate(scope) : 1) }))),
+    // Each row's own divisions by zero, only where that row is the one in use. Elsewhere the
+    // check has no value (not 1): a value jumping from 1 to the row's own at the row's end
+    // looked like a sign change, and every end of an interval became a "vertical asymptote".
+    domainChecks: pieces.flatMap((p) => p.fn.domainChecks.map((c) => ({ kind: c.kind, evaluate: (scope) => (pieceAt(scope.x) === p ? c.evaluate(scope) : NaN) }))),
   };
   return { graph, label: graph.label, latex, dots: piecewiseDots(pieces, pieceAt), notes: single ? [`for ${pieces[0].cond}`] : pieces.map((p) => `${p.expr} when ${p.cond}`),
     domain: single ? [pieces[0].range.lo, pieces[0].range.hi] : null,
@@ -339,9 +354,12 @@ export function fitYRange(functions, [x0, x1]) {
     for (const l of landmarksOf(f.graph, Math.max(Math.abs(x0), Math.abs(x1)))) if (Number.isFinite(l.y) && l.x >= x0 && l.x <= x1) keys.push(l.y);
   }
   const span = Math.max(...keys) - Math.min(...keys);
+  // Only when most of the curve stays in that window: a parabola (3x^2 + 2x) climbing steadily
+  // to 85 is not running off, and cut to y from -0.5 to 2 it was mostly out of sight.
   if (keys.length > 2 && span > 1e-9 && hi - lo > 25 * Math.max(span, 1)) {
     const room = Math.max(span, 1) * 1.5;
-    lo = Math.max(lo, Math.min(...keys) - room); hi = Math.min(hi, Math.max(...keys) + room);
+    const zlo = Math.max(lo, Math.min(...keys) - room), zhi = Math.min(hi, Math.max(...keys) + room);
+    if (ys.filter((y) => y >= zlo && y <= zhi).length >= 0.4 * ys.length) { lo = zlo; hi = zhi; }
   }
   for (const f of functions) for (const d of f.dots) { lo = Math.min(lo, d.coordinate[1]); hi = Math.max(hi, d.coordinate[1]); }
   if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
@@ -356,7 +374,17 @@ export function fitYRange(functions, [x0, x1]) {
 // (in (x^2-x-2)/(x-2) the row has a hole at x = 2, filled or not by another row).
 export function landmarksOf(graph, boundary) {
   const out = [];
+  // Defined nowhere in the window (1/0): nothing to point out, and no "asymptote" at every step.
+  const grid = Array.from({ length: 401 }, (_, i) => valueAt(graph, -boundary + (2 * boundary * i) / 400));
+  if (!grid.some(Number.isFinite)) return [];
+  // Rounding noise is not a shape: cos(x)^2 + sin(x)^2 is 1 everywhere, with no peaks, even
+  // where the computer's last digit wobbles.
+  const flatAround = (x, y) => {
+    const ys = Array.from({ length: 21 }, (_, k) => valueAt(graph, x + ((k - 10) * boundary) / 200)).filter(Number.isFinite);
+    return ys.length > 2 && ys.every((v) => Math.abs(v - y) <= 1e-9 * (1 + Math.abs(y)));
+  };
   for (const l of detectLandmarks(graph, boundary)) {
+    if ((l.kind === 'maximum' || l.kind === 'minimum') && flatAround(l.x, l.y)) continue;
     if (l.kind === 'asymptote') {
       const sides = [-1e-5, 1e-5].map((d) => graph.yAt(l.x + d));
       const scale = 1 + Math.max(...sides.map(Math.abs));
@@ -376,14 +404,92 @@ export function landmarksOf(graph, boundary) {
     }
     out.push(l);
   }
-  const all = [...out, ...shapeMarks(graph, boundary, out), ...jumpMarks(graph, boundary, out)];
-  // A corner, an end or a turning point at height 0 (where pieces meet) is a zero too.
+  let all = [...out, ...shapeMarks(graph, boundary, out), ...jumpMarks(graph, boundary, out)]
+    .filter((l) => !((l.kind === 'maximum' || l.kind === 'minimum') && Number.isFinite(l.y) && flatAround(l.x, l.y)));
+  // A corner, an end or a turning point at height 0 (where pieces meet) is a zero too; an end
+  // the curve does not include (an open dot) is not on the curve, so it is not.
   for (const l of [...all]) {
-    if (['corner', 'endpoint', 'minimum', 'maximum'].includes(l.kind) && l.y === 0 && !all.some((m) => ['x-axis', 'origin'].includes(m.kind) && Math.abs(m.x - l.x) < 1e-6)) {
+    if (['corner', 'endpoint', 'minimum', 'maximum'].includes(l.kind) && l.y === 0 && l.included !== false && !all.some((m) => ['x-axis', 'origin'].includes(m.kind) && Math.abs(m.x - l.x) < 1e-6)) {
       all.push(Math.abs(l.x) < 1e-9 ? { kind: 'origin', x: 0, y: 0, label: 'Origin (0, 0)' } : { kind: 'x-axis', x: l.x, y: 0, label: `X-axis root at (${formatNumber(l.x)}, 0)` });
     }
   }
+  // sin(1/x) near 0: the zeros and turns crowd together without end. Said once, as that.
+  for (const c of oscillations(graph, boundary, all)) {
+    const r = boundary / 20;
+    all = all.filter((l) => !(['x-axis', 'origin', 'maximum', 'minimum', 'asymptote'].includes(l.kind) && Math.abs(l.x - c) < r));
+    // A hole there (x sin(1/x) at 0) is measured much closer in: 1e-5 away it still wobbles.
+    for (const l of all.filter((m) => m.kind === 'open-point' && Math.abs(m.x - c) < 1e-6)) {
+      l.y = tidy((valueAt(graph, c - 1e-10) + valueAt(graph, c + 1e-10)) / 2);
+      l.label = `Open point (hole) at (${formatNumber(l.x)}, ${formatNumber(l.y)})`;
+    }
+    all.push({ kind: 'oscillation', x: c, y: null, label: `Oscillates infinitely often near x = ${formatNumber(c)}` });
+  }
+  // Touching the x-axis is not crossing it: x^2 is above it on both sides of 0.
+  for (const l of all) {
+    if (l.kind !== 'x-axis' && l.kind !== 'origin') continue;
+    const d = Math.max(1e-6, boundary * 1e-4);
+    const [a, b] = [valueAt(graph, l.x - d), valueAt(graph, l.x + d)];
+    if (Number.isFinite(a) && Number.isFinite(b) && Math.sign(a) === Math.sign(b) && a !== 0) l.touches = true;
+  }
   return all.sort((a, b) => a.x - b.x);
+}
+
+// Where a curve wiggles infinitely often (sin(1/x) at 0): looked at ten times closer, it shows
+// several times as many turns. Candidates are where the zeros and turns found crowd together.
+function oscillations(graph, boundary, marks) {
+  const wiggles = marks.filter((l) => ['x-axis', 'origin', 'maximum', 'minimum'].includes(l.kind)).map((l) => l.x).sort((a, b) => a - b);
+  if (wiggles.length < 8) return [];
+  const turns = (lo, hi, n) => {
+    let count = 0, prev = null, last = valueAt(graph, lo);
+    for (let i = 1; i <= n; i += 1) {
+      const y = valueAt(graph, lo + ((hi - lo) * i) / n);
+      if (Number.isFinite(y) && Number.isFinite(last)) {
+        const step = Math.sign(y - last);
+        if (step && prev && step !== prev) count += 1;
+        if (step) prev = step;
+      }
+      last = y;
+    }
+    return count;
+  };
+  const w = boundary / 20;
+  const candidates = new Set();
+  // Where the curve is not defined or the found points bunch up (eight within w of each other).
+  for (let i = 0; i + 7 < wiggles.length; i += 1) if (wiggles[i + 7] - wiggles[i] < 2 * w) candidates.add(Number(((wiggles[i] + wiggles[i + 7]) / 2).toFixed(1)));
+  if (!Number.isFinite(valueAt(graph, 0))) candidates.add(0);
+  const found = [];
+  for (const c of [...candidates].sort((a, b) => Math.abs(a) - Math.abs(b))) {
+    if (found.some((f) => Math.abs(f - c) < 2 * w)) continue;
+    const coarse = turns(c - w, c + w, 2000), fine = turns(c - w, c + w, 20000);
+    if (fine >= 20 && fine >= 2.5 * coarse) found.push(c);
+  }
+  return found;
+}
+
+// Horizontal asymptotes: far out to one side the curve settles at a height (e^x at 0 to the left,
+// 1/(x + 2) + 2 at 2 on both sides). A curve that is simply flat there (a row y = 2) has none.
+export function horizontalAsymptotes(f, [x0, x1]) {
+  const out = [];
+  for (const dir of [-1, 1]) {
+    if (f.domain && Number.isFinite(dir < 0 ? f.domain[0] : f.domain[1])) continue;
+    // Farther and farther out, as long as there is a value (e^x has none past x = -745 or so).
+    const ys = [];
+    for (const v of [20, 50, 100, 300, 700, 1e3, 1e4, 1e6, 1e8, 1e10, 1e12]) {
+      const y = valueAt(f.graph, dir * v);
+      if (!Number.isFinite(y)) break;
+      ys.push(y);
+    }
+    if (ys.length < 5) continue;
+    const L = ys.at(-1);
+    const off = ys.map((y) => Math.abs(y - L));
+    const n = ys.length;
+    if (!(off[n - 2] < 1e-4 * (1 + Math.abs(L)) && off[n - 3] <= off[n - 4] + 1e-12 && off[n - 2] <= off[n - 3] + 1e-12)) continue;
+    const edge = valueAt(f.graph, dir < 0 ? x0 : x1);
+    if (Number.isFinite(edge) && Math.abs(edge - L) <= 1e-9 * (1 + Math.abs(L))) continue;
+    out.push({ dir, y: Math.abs(L) < 1e-6 ? 0 : Number(L.toPrecision(6)) });
+  }
+  if (out.length === 2 && out[0].y === out[1].y) return [{ dir: 0, y: out[0].y }];
+  return out;
 }
 
 // At a jump, the point itself can be the lowest or highest around it: in a piecewise function
@@ -422,7 +528,8 @@ function jumpMarks(graph, boundary, known) {
 export function spokenLabel(l) {
   const at = `${say(l.x)}, ${say(l.y ?? 0)}`;
   switch (l.kind) {
-    case 'x-axis': return `crosses the x-axis at ${say(l.x)}`;
+    case 'x-axis': return `${l.touches ? 'touches' : 'crosses'} the x-axis at ${say(l.x)}`;
+    case 'oscillation': return `oscillates infinitely often near x = ${say(l.x)}`;
     case 'y-axis': return `crosses the y-axis at ${say(l.y)}`;
     case 'origin': return 'the origin, 0, 0';
     case 'maximum': return `peak at ${at}`;
@@ -576,8 +683,12 @@ export function shapeMarks(graph, boundary, known = []) {
     }
     // The end point itself belongs to the curve when the curve is there at the edge found (x
     // may be that edge written shorter, -3.14159265 for -pi, a hair outside).
+    // A short number (1, 0.5) is the end itself, so the curve decides: 0 < x < 1 leaves out x = 1
+    // although 0.999999999 is on the curve.
     const here = graph.limitAt(x);
-    const included = here.defined || (Math.abs(x - edge) < 1e-8 * (1 + Math.abs(x)) && Number.isFinite(valueAt(graph, edge)));
+    const shortX = Number(x.toFixed(3));
+    const included = Math.abs(shortX - x) < 1e-8 * (1 + Math.abs(x)) ? graph.limitAt(shortX).defined
+      : here.defined || (Math.abs(x - edge) < 1e-8 * (1 + Math.abs(x)) && Number.isFinite(valueAt(graph, edge)));
     const y0 = here.defined ? here.y : included ? valueAt(graph, edge) : toward[3];
     const y = Math.abs(y0) < 1e-7 ? 0 : tidy(y0);
     add({ kind: 'endpoint', x, y, included, side: insideRight ? 'start' : 'end',
@@ -594,7 +705,7 @@ export const HIDEABLE = {
   yIntercept: { name: 'where it crosses the y-axis', kinds: ['y-axis', 'origin'] },
   extrema: { name: 'peaks and valleys', kinds: ['maximum', 'minimum'] },
   holes: { name: 'holes, jumps and dots', kinds: ['open-point', 'solid-point'] },
-  asymptotes: { name: 'vertical asymptotes', kinds: ['asymptote'] },
+  asymptotes: { name: 'asymptotes', kinds: ['asymptote'] },
   corners: { name: 'sharp corners, cusps and where the curve ends', kinds: ['corner', 'endpoint'] },
 };
 const hiddenKinds = (hide = []) => new Set(hide.flatMap((h) => HIDEABLE[h]?.kinds || []));
@@ -606,14 +717,23 @@ export function describeFunction(f, [x0, x1], hide = []) {
   const marks = landmarksOf(f.graph, boundary).filter((l) => l.x >= x0 - 1e-9 && l.x <= x1 + 1e-9);
   const list = (kind) => (hidden.has(kind) ? [] : marks.filter((l) => l.kind === kind));
   const parts = [];
-  const zeros = [...list('x-axis'), ...(hide.includes('zeros') ? [] : marks.filter((l) => l.kind === 'origin'))].sort((a, b) => a.x - b.x).map((l) => say(l.x));
-  if (zeros.length) parts.push(`crosses the x-axis at x = ${zeros.join(', ')}`);
+  // 1/0: nothing in the window at all.
+  if (!Array.from({ length: 401 }, (_, i) => valueAt(f.graph, x0 + ((x1 - x0) * i) / 400)).some(Number.isFinite)) return [`is not defined anywhere from x = ${say(x0)} to ${say(x1)}`];
+  const zeroMarks = [...list('x-axis'), ...(hide.includes('zeros') ? [] : marks.filter((l) => l.kind === 'origin'))].sort((a, b) => a.x - b.x);
+  const crossing = zeroMarks.filter((l) => !l.touches).map((l) => say(l.x)), touching = zeroMarks.filter((l) => l.touches).map((l) => say(l.x));
+  if (crossing.length) parts.push(`crosses the x-axis at x = ${crossing.join(', ')}`);
+  if (touching.length) parts.push(`touches the x-axis at x = ${touching.join(', ')}`);
   const yInt = hide.includes('yIntercept') ? null : marks.find((l) => l.kind === 'y-axis') || marks.find((l) => l.kind === 'origin');
   if (yInt) parts.push(`crosses the y-axis at y = ${say(yInt.y ?? 0)}`);
   for (const l of list('maximum')) parts.push(`peak at ${say(l.x)}, ${say(l.y)}`);
   for (const l of list('minimum')) parts.push(`valley at ${say(l.x)}, ${say(l.y)}`);
   for (const l of list('open-point')) parts.push(`hole at ${say(l.x)}, ${say(l.y)}`);
   for (const l of list('asymptote')) parts.push(`vertical asymptote at x = ${say(l.x)}`);
+  // 'beyond': a drawing shows only what is drawn, so nothing is said about far past its edges.
+  if (!hide.includes('asymptotes') && !hide.includes('beyond')) {
+    for (const h of horizontalAsymptotes(f, [x0, x1])) parts.push(`horizontal asymptote y = ${say(h.y)}${h.dir === 0 ? ' on both sides' : h.dir < 0 ? ' as x goes to minus infinity' : ' as x goes to infinity'}`);
+  }
+  for (const l of list('oscillation')) parts.push(`oscillates infinitely often near x = ${say(l.x)}`);
   for (const l of list('corner')) parts.push(`${l.shape} at ${say(l.x)}, ${say(l.y)}`);
   for (const l of list('endpoint')) parts.push(l.label);
   if (!hide.includes('holes')) for (const d of f.dots) parts.push(d.label);
@@ -641,8 +761,9 @@ function studentCopy(graph) {
   const sources = [...(graph.functions || []).map((f) => ({ text: f.latex, format: 'latex' })), ...(graph.equations || [])];
   const functions = sources.map((s) => compileFunction(s.text ?? s, s.format));
   const words = functions.map((f, i) => {
-    const parts = describeFunction(f, span.x, hide);
-    const name = opts.hideFormula ? (functions.length > 1 ? `Function ${i + 1}` : 'The function') : f.label;
+    const parts = describeFunction(f, span.x, opts.drawn ? [...hide, 'beyond'] : hide);
+    // opts.names: what the page calls each curve (f(x) and g(x) in a TikZ drawing with labels).
+    const name = opts.hideFormula ? (opts.names?.[i] || (functions.length > 1 ? `Function ${i + 1}` : 'The function')) : f.label;
     return `${name}${parts.length ? `: ${parts.join('; ')}` : ''}`;
   });
   const shown = `Shown for x from ${say(span.x[0])} to ${say(span.x[1])} and y from ${say(span.y[0])} to ${say(span.y[1])}.`;
@@ -665,7 +786,7 @@ function studentCopy(graph) {
     const boundary = Math.max(Math.abs(span.x[0]), Math.abs(span.x[1]));
     const marks = landmarksOf(f.graph, boundary).filter((l) => !hidden.has(l.kind) && l.x >= span.x[0] - 1e-9 && l.x <= span.x[1] + 1e-9);
     out.curves.push({
-      kind: 'curve', label: functions.length > 1 ? `function ${i + 1}` : 'the function', color: '',
+      kind: 'curve', label: opts.names?.[i] || (functions.length > 1 ? `function ${i + 1}` : 'the function'), color: '',
       samples: sampleCurve(f.graph, span.x),
       turning_points: marks.filter((l) => l.kind === 'maximum' || l.kind === 'minimum').map((l) => ({ kind: l.kind === 'maximum' ? 'peak' : 'valley', at: [l.x, l.y] })),
       crosses_x_axis_at: marks.filter((l) => l.kind === 'x-axis' || (l.kind === 'origin' && !hide.includes('zeros'))).map((l) => l.x),

@@ -154,9 +154,15 @@ become lists with their parts, tabular becomes a table, bold and italic stay, an
 explore by sound (pgfplots measures sin and cos in degrees unless deg() is used; this is
 followed). TikZ drawings of functions (`\draw plot (\x, {formula})`) become graphs too: each
 plot is a piece of the function, the axes drawn through 0 give the window, and `\node at
-(x,y) {$\circ$}` or `{\textbullet}` are its open and solid dots. Other pictures and TikZ
-drawings are named, not shown. Whatever could not be read is a
-review note at the end (F8).
+(x,y) {$\circ$}` or `{\textbullet}` are its open and solid dots; two labelled functions on the
+same axes (`node{$f(x)$}`, `node{$g(x)$}`) stay two functions. In pgfplots graphs, open and solid
+dots (drawn with `\fill ... circle`, or with the file's own styles such as `holdot`), dashed
+lines (a dashed vertical line is how a page shows an asymptote) and arrowheads (the curve goes
+on) are read too. The exam class works: each `\question` is a heading with its points, parts
+and choices are lists, and solutions are left out unless the file prints answers. An empty
+axis is said as an empty grid to draw on. Other pictures and TikZ drawings are named, not
+shown. One mistake in the file (a `{` never closed, an environment never ended) loses only that
+part, never the whole file. Whatever could not be read is a review note at the end (F8).
 
 Asking a professor for the .tex files is a small request: they already have them, and
 the result is exact. `test-fixtures/math/homework.tex` is a sample.
@@ -168,6 +174,14 @@ Word document. An exported PDF carries the notebook inside it as a standard PDF 
 (the paperclip in Adobe Reader; e-invoices carry their data the same way). Every PDF reader
 shows and prints it as usual; when Math Notebook imports that PDF, it opens the document
 inside it exactly (equations, graphs with sound) instead of reading the printed page.
+
+File > Export as braille (BRF) makes a braille ready file for an embosser or a braille display,
+with BrailleBlaster (free, from the American Printing House: brailleblaster.org), which has to be
+installed. The notebook hands it the document with every equation as MathML; BrailleBlaster
+translates it with its own settings. For Nemeth maths, choose UEB with Nemeth in BrailleBlaster's
+Translation settings; the notebook says which standard was used. Open BrailleBlaster once before
+the first export: its first start asks you to accept its licence. The way of making the braille
+follows Owen Petronick's Braille Check.
 
 ## Teacher mode
 
@@ -228,6 +242,26 @@ How a page is read is chosen in Settings > Reading PDFs:
 - **AI reads every page**: the earlier way, checked against the PDF's text (below). The
   model starts loading as soon as the file dialog opens and two pages are read at a time:
   a 15-page lecture took about 80 seconds.
+
+**Checking each equation against the page (optional, needs Tectonic).** With
+[Tectonic](https://tectonic-typesetting.github.io/) installed, every equation read from a page
+is typeset again and compared with that place on the page: the same characters in the same
+order, raised or lowered alike, the same characters under each fraction bar and root. When an
+equation does not match, readings close to it are tried (an exponent read as a subscript, a
+root or fraction one character too long or short, a mark set over an equals sign), and one is
+kept only if it matches the page exactly; otherwise the reading stays as it was. The switch is
+Settings > Reading PDFs, "Check each equation" (on; it does nothing without Tectonic).
+Tectonic is not included with Math Notebook. To use the check, install it yourself
+([installing Tectonic](https://tectonic-typesetting.github.io/book/latest/installation/), or
+the Windows zip from its [releases](https://github.com/tectonic-typesetting/tectonic/releases))
+and either put `tectonic.exe` on your PATH, set the environment variable `TECTONIC` to its
+full path, or (running from this folder) put it in `tools\tectonic\tectonic.exe` beside the
+`notebook` folder. The first time it typesets, Tectonic downloads the TeX packages it needs
+from its own servers (once; they are kept in its cache). Tried with Tectonic 0.17.0: on 868
+equations from one calculus course's LaTeX PDFs, 863 matched their page as read, 1 was
+corrected (an "=?" read as "= to the power ?"), and the other 4 were real misreadings it
+caught but could not correct (left as read). It slows reading down: seconds per page, more
+when an equation has to be corrected.
 
 Pages read by text have no checker notes (their text is the PDF's own); a review note
 there means the text reader met something it could not place, such as an unknown symbol.
@@ -339,6 +373,12 @@ has not:
   "install for me or for all users" question reads its choices as buttons, the Welcome text,
   the checkboxes, and the uninstaller's "keep your data?" question); the newer graph sounds
   (instruments, beeps, game sounds, and "clearer pitch", which is on by default).
+- Checking equations with Tectonic: tested with Tectonic 0.17.0 on one Windows computer, on
+  LaTeX-made PDFs only (it compares with TeX's own fonts, so PDFs made with Word or scanned
+  are not checked usefully). Tectonic is not bundled with the app or the setup. The check
+  cannot see a mistake that splits one equation into pieces on separate lines (each piece
+  matches its own place), and an equation it cannot correct stays as read, without a
+  warning.
 - With Access8Math as NVDA's maths voice, square brackets can be spoken in Chinese. That is
   in Access8Math's own English dictionary, not in the notebook; choosing MathCAT as the
   speech source in Access8Math's settings avoids it.
@@ -364,8 +404,19 @@ has not:
 - Vertical lines are described but not traced (they are not functions of x).
 - Drawing graphs is not built yet (planned as its own lab). Font sizes, colours and
   alignment are not offered.
-- pgfplots plots from tables, files or parametric coordinates, and TikZ drawings, are not
-  read from .tex files; they are named in a review note.
+- pgfplots plots from tables, files or parametric coordinates, and TikZ drawings that are not
+  graphs of functions, are not read from .tex files; they are named in a review note.
+- Braille: tried with BrailleBlaster 3.2.5 on the sample homework (UEB, and UEB with Nemeth); the
+  automatic tests use a stand-in. A piecewise function is brailled one piece to a line, because
+  BrailleBlaster makes the rows of a cases into an 8-dot cell an embosser cannot make; other
+  tables in maths (matrices) can still give one, and the notebook then says on which lines. The
+  braille was read back by a program on seven LaTeX files, which found missing list numbers (fixed);
+  it has not been checked by a braille reader yet. BrailleBlaster must have been opened once
+  (its licence and first questions) before the notebook can use it.
+- Graphs: `1e-9` is not read as a number (it could also mean 1 times e, minus 9); write
+  `10^(-9)`. floor, ceiling, round, max and min cannot be graphed yet.
+- PDFs: the labels inside a drawn figure (y, y = f(x), (b, f(b))) can come out as separate
+  short equations before the text when the figure is not found as a graph.
 - The older browser page (`/` instead of the desktop app) still works but is not developed further.
 
 
